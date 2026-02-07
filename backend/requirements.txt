@@ -1,0 +1,26 @@
+# Core Framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# AI & ML - Gemini 3 SDK
+google-genai
+
+# AWS
+boto3
+
+# Text-to-Speech
+edge-tts
+pydub  # For audio duration detection (optional)
+
+# Video Processing
+ffmpeg-python
+
+# Utilities
+python-dotenv
+requests
+aiofiles
+
+# Authentication (Clerk JWT verification)
+pyjwt[crypto]
+cryptography
