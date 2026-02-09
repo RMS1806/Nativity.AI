@@ -220,22 +220,30 @@ class FFmpegService:
         original_video_path: str,
         audio_segments: List[dict],
         output_path: str,
-        optimize_for_mobile: bool = True
+        optimize_for_mobile: bool = True,
+        background_volume: float = 0.15,
+        tts_volume: float = 1.0,
+        tts_delay_seconds: float = 0.0
     ) -> ProcessingResult:
         """
-        Replace video audio with generated TTS segments
+        Mix original video audio (background) with generated TTS audio
         
         This is the main video processing function that:
-        1. Mutes the original video
-        2. Creates a timeline of audio segments
-        3. Merges new audio with video
-        4. Optimizes for low-bandwidth if requested
+        1. Gets video info and checks for original audio stream
+        2. Creates a timeline of TTS audio segments
+        3. DELAYS TTS to match first spoken word (intro music preservation)
+        4. MIXES original audio (lowered) with TTS audio (full volume)
+        5. Keeps FULL video duration (no abrupt cuts)
+        6. Falls back to simple replacement if no original audio exists
         
         Args:
             original_video_path: Path to original video file
             audio_segments: List of dicts with file_path, start_time, end_time
             output_path: Path to save final video
             optimize_for_mobile: Apply mobile-optimized compression
+            background_volume: Volume level for original background audio (0.0-1.0, default 0.15 = 15%)
+            tts_volume: Volume level for TTS voiceover (0.0-1.0, default 1.0 = 100%)
+            tts_delay_seconds: Delay TTS audio by this many seconds to match first spoken word (default 0.0)
         
         Returns:
             ProcessingResult with final video path and size
@@ -259,6 +267,10 @@ class FFmpegService:
             
             video_duration = video_info['duration']
             
+            # Check if original video has an audio stream
+            has_original_audio = video_info.get('audio', {}).get('codec') is not None
+            print(f"🎵 Original video has audio: {has_original_audio}")
+            
             # Step 2: Concatenate all audio segments
             audio_files = [seg.get('file_path') for seg in audio_segments if seg.get('file_path')]
             
@@ -271,44 +283,120 @@ class FFmpegService:
             if not concat_result.success:
                 raise Exception(f"Audio concatenation failed: {concat_result.error}")
             
-            # Step 3: Merge video with new audio
-            video_input = ffmpeg.input(original_video_path)
-            audio_input = ffmpeg.input(combined_audio)
+            # Step 3: Build video encoding options
+            video_filter = 'scale=-2:480' if optimize_for_mobile else None
             
-            # Build output options based on optimization settings
-            output_options = {
-                'vcodec': 'libx264',
-                'acodec': 'aac',
-                'audio_bitrate': '128k',
-                'shortest': None,  # End when shortest stream ends
-            }
+            # Convert delay from seconds to milliseconds for adelay filter
+            delay_ms = int(tts_delay_seconds * 1000)
             
-            if optimize_for_mobile:
-                # Low-bandwidth optimization for WhatsApp/Mobile
-                output_options.update({
-                    'preset': 'fast',
-                    'crf': 28,  # Higher CRF = smaller file, slightly lower quality
-                    'vf': 'scale=-2:480',  # Scale to 480p height, maintain aspect
-                    'movflags': '+faststart',  # Optimize for streaming
-                })
-            else:
-                output_options.update({
-                    'preset': 'medium',
-                    'crf': 23,  # Standard quality
-                })
-            
-            # Run FFmpeg
-            (
-                ffmpeg
-                .output(
-                    video_input.video,
-                    audio_input.audio,
-                    output_path,
-                    **output_options
+            if has_original_audio:
+                # MIX original audio (background) with TTS audio (foreground)
+                print(f"🔊 Mixing audio: background={background_volume*100}%, TTS={tts_volume*100}%, delay={tts_delay_seconds}s")
+                
+                # Build filter_complex for audio mixing with TTS delay
+                # [1:a] = TTS audio -> delay to match first spoken word, then apply volume
+                # [0:a] = original video audio -> apply background volume (lowered)
+                # amix with duration=longest: Keep FULL original video length
+                if delay_ms > 0:
+                    # Apply delay to TTS to match intro music/silence
+                    filter_complex = (
+                        f"[1:a]adelay={delay_ms}|{delay_ms},volume={tts_volume}[delayed_tts];"
+                        f"[0:a]volume={background_volume}[bg];"
+                        f"[delayed_tts][bg]amix=inputs=2:duration=longest[aout]"
+                    )
+                    print(f"⏱️ Delaying TTS by {tts_delay_seconds}s ({delay_ms}ms) to match first spoken word")
+                else:
+                    # No delay needed - speech starts immediately
+                    filter_complex = (
+                        f"[1:a]volume={tts_volume}[tts];"
+                        f"[0:a]volume={background_volume}[bg];"
+                        f"[tts][bg]amix=inputs=2:duration=longest[aout]"
+                    )
+                
+                # Build FFmpeg command using subprocess for complex filters
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", original_video_path,
+                    "-i", combined_audio,
+                    "-filter_complex", filter_complex,
+                    "-map", "0:v",
+                    "-map", "[aout]",
+                ]
+                
+                # Add video encoding options
+                if optimize_for_mobile:
+                    # Re-encode for mobile optimization
+                    cmd.extend([
+                        "-c:v", "libx264",
+                        "-preset", "fast",
+                        "-crf", "28",
+                        "-vf", "scale=-2:480",
+                        "-movflags", "+faststart",
+                    ])
+                else:
+                    # Fast copy mode - no re-encoding for speed
+                    cmd.extend([
+                        "-c:v", "copy",
+                    ])
+                
+                # Audio encoding - NO -shortest flag to keep full video length
+                cmd.extend([
+                    "-c:a", "aac",
+                    "-b:a", "128k",
+                ])
+                
+                cmd.append(output_path)
+                
+                print(f"🎬 Running FFmpeg with audio mixing...")
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True
                 )
-                .overwrite_output()
-                .run(capture_stdout=True, capture_stderr=True)
-            )
+                
+                if result.returncode != 0:
+                    raise Exception(f"FFmpeg mixing failed: {result.stderr}")
+                
+            else:
+                # No original audio - fall back to simple audio replacement
+                print("⚠️ No original audio stream found. Using simple audio replacement.")
+                
+                video_input = ffmpeg.input(original_video_path)
+                audio_input = ffmpeg.input(combined_audio)
+                
+                # Build output options based on optimization settings
+                output_options = {
+                    'vcodec': 'libx264',
+                    'acodec': 'aac',
+                    'audio_bitrate': '128k',
+                    'shortest': None,
+                }
+                
+                if optimize_for_mobile:
+                    output_options.update({
+                        'preset': 'fast',
+                        'crf': 28,
+                        'vf': 'scale=-2:480',
+                        'movflags': '+faststart',
+                    })
+                else:
+                    output_options.update({
+                        'preset': 'medium',
+                        'crf': 23,
+                    })
+                
+                # Run FFmpeg with simple replacement
+                (
+                    ffmpeg
+                    .output(
+                        video_input.video,
+                        audio_input.audio,
+                        output_path,
+                        **output_options
+                    )
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True)
+                )
             
             # Step 4: Get final output info
             final_info = self.get_video_info(output_path)

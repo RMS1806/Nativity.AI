@@ -368,12 +368,20 @@ async def process_finalize_dubbing(
             for seg in audio_segments
         ]
         
+        # Calculate TTS delay from first approved segment start time
+        tts_delay = 0.0
+        if approved_segments:
+            # Safely get start time of first segment
+            first_seg = approved_segments[0]
+            tts_delay = first_seg.get("start", 0.0)
+            
         # Stitch video
         stitch_result = ffmpeg_service.stitch_video(
             original_video_path=local_video_path,
             audio_segments=audio_segment_dicts,
             output_path=output_video_path,
-            optimize_for_mobile=True
+            optimize_for_mobile=True,
+            tts_delay_seconds=tts_delay
         )
         
         if not stitch_result.success:
@@ -578,12 +586,17 @@ async def process_localization_job(
             for seg in audio_segments
         ]
         
+        # Get first speech offset from Gemini analysis
+        video_metadata = analysis_result.get("video_metadata", {})
+        tts_delay = video_metadata.get("first_speech_offset_seconds", 0.0)
+        
         # Stitch video with optimized settings
         stitch_result = ffmpeg_service.stitch_video(
             original_video_path=local_video_path,
             audio_segments=audio_segment_dicts,
             output_path=output_video_path,
-            optimize_for_mobile=True
+            optimize_for_mobile=True,
+            tts_delay_seconds=tts_delay
         )
         
         if not stitch_result.success:

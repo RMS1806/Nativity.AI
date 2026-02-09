@@ -205,7 +205,8 @@ Analyze this video comprehensively and provide a JSON response with the followin
   "video_metadata": {{
     "duration_seconds": <total duration>,
     "detected_speakers": <number of unique speakers>,
-    "content_type": "<educational|entertainment|promotional|informational>"
+    "content_type": "<educational|entertainment|promotional|informational>",
+    "first_speech_offset_seconds": <seconds until first spoken word, e.g. 2.5 if there's intro music>
   }},
   "segments": [
     {{
@@ -264,6 +265,7 @@ CRITICAL INSTRUCTIONS:
 5. Preserve technical terms when translation would lose meaning
 6. Ensure timestamps are accurate for lip-sync
 7. IMPORTANT: Populate the "cultural_analysis" array with EVERY cultural adaptation made, explaining the reasoning
+8. CRITICAL: Accurately detect first_speech_offset_seconds - if there's intro music, silence, or ambiance before the first spoken word, return that offset in seconds (e.g., 2.5). If speech starts immediately, return 0
 
 Return ONLY valid JSON, no additional text.'''
 
