@@ -127,33 +127,50 @@ class S3Service:
     def create_presigned_url(self, object_name: str, expiration: int = 3600) -> Optional[str]:
         """
         Generate a presigned URL to share an S3 object.
-        Returns just the URL string for easy use.
-        
+        If CLOUDFRONT_DOMAIN is set, the S3 domain is swapped for the CloudFront
+        domain so all video traffic is served through the CDN.
+
         Args:
             object_name: S3 key or full URL of the object
             expiration: URL expiration time in seconds
-        
+
         Returns:
-            Presigned URL string or None if error
+            Presigned URL string (CloudFront or S3) or None if error
         """
         if not object_name or not self.is_configured():
             return None
-        
+
         try:
-            # Handle full URLs if stored by mistake - extract the key
+            # Handle full URLs stored by mistake — extract the bare S3 key
             if "amazonaws.com" in object_name:
-                # Extract key from URL like https://bucket.s3.region.amazonaws.com/key
                 object_name = object_name.split(".com/")[-1].split("?")[0]
-            
-            presigned_url = self.client.generate_presigned_url(
+
+            url = self.client.generate_presigned_url(
                 'get_object',
-                Params={
-                    'Bucket': self.bucket_name,
-                    'Key': object_name
-                },
+                Params={'Bucket': self.bucket_name, 'Key': object_name},
                 ExpiresIn=expiration
             )
-            return presigned_url
+
+            # Swap S3 domain for CloudFront domain if configured
+            cloudfront_domain = os.environ.get('CLOUDFRONT_DOMAIN')
+            if cloudfront_domain and url:
+                from urllib.parse import urlparse
+
+                parsed_url = urlparse(url)
+
+                # Strip any accidental scheme prefix from the env var value
+                clean_cf_domain = (
+                    cloudfront_domain
+                    .replace('https://', '')
+                    .replace('http://', '')
+                    .strip('/')
+                )
+
+                # Replace only the netloc so the path + secure query params are intact
+                url = url.replace(parsed_url.netloc, clean_cf_domain)
+
+            return url
+
         except Exception as e:
             print(f"Error generating presigned URL for {object_name}: {e}")
             return None

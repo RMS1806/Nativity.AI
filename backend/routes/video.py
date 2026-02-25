@@ -440,6 +440,39 @@ async def process_finalize_dubbing(
                 "file_size_mb": stitch_result.file_size_mb
             })
         
+        # ═══════════════════════════════════════════
+        # STEP 4.5: Generate & Upload WebVTT Subtitles
+        # ═══════════════════════════════════════════
+        subtitle_s3_key = None
+        try:
+            def format_vtt_time(seconds):
+                h = int(seconds // 3600)
+                m = int((seconds % 3600) // 60)
+                s = seconds % 60
+                return f"{h:02d}:{m:02d}:{s:06.3f}"
+
+            vtt_lines = ["WEBVTT", ""]
+            for idx, seg in enumerate(approved_segments):
+                start_sec = seg.get("start", 0)
+                end_sec   = seg.get("end",   0)
+                text      = seg.get("translated_text", "").strip()
+                if not text:
+                    continue
+                vtt_lines.append(str(idx + 1))
+                vtt_lines.append(f"{format_vtt_time(float(start_sec))} --> {format_vtt_time(float(end_sec))}")
+                vtt_lines.append(text)
+                vtt_lines.append("")
+
+            vtt_content  = "\n".join(vtt_lines)
+            vtt_tmp_path = os.path.join(temp_dir, f"{job_id}.vtt")
+            with open(vtt_tmp_path, "w", encoding="utf-8") as f:
+                f.write(vtt_content)
+
+            subtitle_s3_key = f"subtitles/{job_id}.vtt"
+            s3_service.upload_file(vtt_tmp_path, subtitle_s3_key)
+        except Exception as vtt_err:
+            print(f"[VTT] Non-fatal: could not generate subtitles: {vtt_err}")
+
         # Update DynamoDB with completion
         if user_id:
             db_service.update_job_status(
@@ -447,7 +480,8 @@ async def process_finalize_dubbing(
                 job_id=job_id,
                 status="complete",
                 output_url=download_result.get("download_url"),
-                output_s3_key=output_key
+                output_s3_key=output_key,  # store raw key so /history can regenerate fresh URLs
+                subtitle_s3_key=subtitle_s3_key
             )
         
     except Exception as e:
@@ -658,6 +692,45 @@ async def process_localization_job(
             "cultural_report": cultural_report
         })
         
+        # ═══════════════════════════════════════════
+        # STEP 5.5: Generate & Upload WebVTT Subtitles
+        # ═══════════════════════════════════════════
+        subtitle_s3_key = None
+        try:
+            def format_vtt_time(seconds):
+                h = int(seconds // 3600)
+                m = int((seconds % 3600) // 60)
+                s = seconds % 60
+                return f"{h:02d}:{m:02d}:{s:06.3f}"
+
+            vtt_lines = ["WEBVTT", ""]
+            for idx, seg in enumerate(segments):
+                start_sec = seg.get("start_time", 0)
+                end_sec   = seg.get("end_time",   0)
+                text      = seg.get("translated_text", "").strip()
+                if not text:
+                    continue
+                vtt_lines.append(str(idx + 1))
+                vtt_lines.append(f"{format_vtt_time(float(start_sec))} --> {format_vtt_time(float(end_sec))}")
+                vtt_lines.append(text)
+                vtt_lines.append("")
+
+            vtt_content  = "\n".join(vtt_lines)
+            vtt_tmp_path = os.path.join(temp_dir, f"{job_id}.vtt")
+            with open(vtt_tmp_path, "w", encoding="utf-8") as f:
+                f.write(vtt_content)
+
+            subtitle_s3_key = f"subtitles/{job_id}.vtt"
+            s3_service.upload_file(vtt_tmp_path, subtitle_s3_key)
+        except Exception as vtt_err:
+            print(f"[VTT] Non-fatal: could not generate subtitles: {vtt_err}")
+
+        # Calculate words localized from all segments
+        words_localized = sum(
+            len(seg.get("translated_text", "").split())
+            for seg in segments
+        )
+
         # Save to DynamoDB for persistent history
         if user_id:
             db_service.save_video(
@@ -667,10 +740,13 @@ async def process_localization_job(
                 input_file=file_key,
                 status="complete",
                 output_url=download_result.get("download_url"),
+                output_s3_key=output_key,  # store raw key so /history can regenerate fresh URLs
                 whatsapp_url=whatsapp_url,
                 file_size_mb=stitch_result.file_size_mb,
                 cultural_report=cultural_report,
-                segments_count=len(segments)
+                segments_count=len(segments),
+                subtitle_s3_key=subtitle_s3_key,
+                words_localized=words_localized
             )
         
     except Exception as e:
@@ -944,17 +1020,24 @@ async def get_user_history(
             fresh_url = s3_service.create_presigned_url(output_key, expiration=3600)
             if fresh_url:
                 video["output_url"] = fresh_url
-        
+
+        # Regenerate subtitle download URL if we have the subtitle S3 key
+        subtitle_key = video.get("subtitle_s3_key")
+        if subtitle_key and s3_service.is_configured():
+            fresh_subtitle_url = s3_service.create_presigned_url(subtitle_key, expiration=3600)
+            if fresh_subtitle_url:
+                video["subtitle_url"] = fresh_subtitle_url
+
         # Regenerate input URL if needed
         input_key = video.get("input_file") or video.get("input_s3_key")
         if input_key and s3_service.is_configured():
             fresh_input_url = s3_service.create_presigned_url(input_key, expiration=3600)
             if fresh_input_url:
                 video["input_url"] = fresh_input_url
-    
+
     # Calculate real dashboard stats from user's history
     total_projects = len(videos)
-    
+
     # Count unique target languages
     unique_languages = set()
     for video in videos:
@@ -962,16 +1045,21 @@ async def get_user_history(
         if lang:
             unique_languages.add(lang)
     languages_used = len(unique_languages)
-    
-    # Estimate time saved (5 mins average per video localization)
-    minutes_saved = total_projects * 5
-    
+
+    # Sum words localized across all completed videos
+    words_localized = sum(
+        video.get("words_localized") or 0
+        for video in videos
+        if video.get("status") == "complete"
+    )
+
     # Add stats to response
     result["stats"] = {
         "total_projects": total_projects,
         "languages_used": languages_used,
-        "minutes_saved": minutes_saved
+        "words_localized": words_localized,
     }
+
     
     return result
 

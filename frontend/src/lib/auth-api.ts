@@ -91,9 +91,11 @@ export interface HistoryVideo {
     created_at: string;
     output_url?: string;
     input_url?: string;
+    subtitle_url?: string;
     whatsapp_url?: string;
     file_size_mb?: number;
     segments_count?: number;
+    words_localized?: number;
     draft_segments?: any[];
     cultural_report?: {
         idioms_adapted?: number;
@@ -104,7 +106,7 @@ export interface HistoryVideo {
 export interface DashboardStats {
     total_projects: number;
     languages_used: number;
-    minutes_saved: number;
+    words_localized: number;
 }
 
 export interface HistoryResponse {

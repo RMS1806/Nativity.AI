@@ -444,12 +444,21 @@ function VideoRow({ video, onDelete, onFirstDownload }: { video: HistoryVideo; o
                     {video.status === 'complete' && video.output_url && (
                         <>
                             <ActionButton onClick={handleDownloadClick} icon={Download} title="Download" />
-                            <ActionButton
-                                onClick={handleDownloadSrt}
-                                icon={loadingSrt ? Loader2 : FileText}
-                                title="Download SRT"
-                                disabled={loadingSrt}
-                            />
+                            {/* Subtitle download: use server-generated VTT if available, else fall back to SRT */}
+                            {video.subtitle_url ? (
+                                <ActionButton
+                                    href={video.subtitle_url}
+                                    icon={FileText}
+                                    title="Download Subtitles (VTT)"
+                                />
+                            ) : (
+                                <ActionButton
+                                    onClick={handleDownloadSrt}
+                                    icon={loadingSrt ? Loader2 : FileText}
+                                    title="Download SRT"
+                                    disabled={loadingSrt}
+                                />
+                            )}
                             <ActionButton onClick={handleShowInsights} icon={Eye} title="Cultural Insights" />
                             <ActionButton onClick={() => setShowYouTubeModal(true)} icon={Youtube} title="YouTube Export" />
                         </>

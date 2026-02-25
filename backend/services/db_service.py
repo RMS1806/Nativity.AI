@@ -71,7 +71,9 @@ class DBService:
         cultural_report: Optional[Dict[str, Any]] = None,
         segments_count: Optional[int] = None,
         draft_segments: Optional[List[Dict[str, Any]]] = None,
-        output_s3_key: Optional[str] = None
+        output_s3_key: Optional[str] = None,
+        subtitle_s3_key: Optional[str] = None,
+        words_localized: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Save a video localization job to user's history.
@@ -115,6 +117,10 @@ class DBService:
             item['output_url'] = output_url
         if output_s3_key:
             item['output_s3_key'] = output_s3_key
+        if subtitle_s3_key:
+            item['subtitle_s3_key'] = subtitle_s3_key
+        if words_localized is not None:
+            item['words_localized'] = words_localized
         if whatsapp_url:
             item['whatsapp_url'] = whatsapp_url
         if file_size_mb is not None:
@@ -202,7 +208,8 @@ class DBService:
         job_id: str,
         status: str,
         output_url: Optional[str] = None,
-        output_s3_key: Optional[str] = None
+        output_s3_key: Optional[str] = None,
+        subtitle_s3_key: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Update the status of a job and optionally set output URL.
@@ -244,6 +251,9 @@ class DBService:
         if output_s3_key:
             update_expr += ", output_s3_key = :output_s3_key"
             expr_values[":output_s3_key"] = output_s3_key
+        if subtitle_s3_key:
+            update_expr += ", subtitle_s3_key = :subtitle_s3_key"
+            expr_values[":subtitle_s3_key"] = subtitle_s3_key
         
         try:
             self.table.update_item(
@@ -295,6 +305,9 @@ class DBService:
                     'status': item.get('status'),
                     'created_at': item.get('created_at'),
                     'output_url': item.get('output_url'),
+                    'output_s3_key': item.get('output_s3_key'),  # needed to regenerate fresh presigned URLs
+                    'subtitle_s3_key': item.get('subtitle_s3_key'),
+                    'words_localized': int(item['words_localized']) if item.get('words_localized') else None,
                     'whatsapp_url': item.get('whatsapp_url'),
                     'file_size_mb': float(item['file_size_mb']) if item.get('file_size_mb') else None,
                     'segments_count': item.get('segments_count'),

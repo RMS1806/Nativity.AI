@@ -2,7 +2,7 @@
 
 import { useUser, UserButton } from '@clerk/nextjs';
 import { motion } from 'framer-motion';
-import { Plus, Zap, Home, LayoutDashboard, Globe, Clock, FolderOpen } from 'lucide-react';
+import { Plus, Zap, Home, LayoutDashboard, Globe, BookOpen, FolderOpen } from 'lucide-react';
 import Link from 'next/link';
 import HistoryTable from '@/components/HistoryTable';
 import { useHistory, DashboardStats } from '@/lib/auth-api';
@@ -55,7 +55,7 @@ export default function DashboardPage() {
     const stats: DashboardStats = data?.stats || {
         total_projects: 0,
         languages_used: 0,
-        minutes_saved: 0
+        words_localized: 0
     };
 
     return (
@@ -130,9 +130,9 @@ export default function DashboardPage() {
                         index={1}
                     />
                     <StatCard
-                        icon={<Clock className="w-5 h-5 text-violet-500" />}
-                        label="Time Saved"
-                        value={`${stats.minutes_saved} mins`}
+                        icon={<BookOpen className="w-5 h-5 text-violet-500" />}
+                        label="Words Localized"
+                        value={stats.words_localized.toLocaleString()}
                         loading={loading}
                         index={2}
                     />
