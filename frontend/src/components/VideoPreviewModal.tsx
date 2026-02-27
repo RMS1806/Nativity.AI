@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Download, Play, Volume2, VolumeX } from 'lucide-react';
+import { X, Download, Play, Volume2 } from 'lucide-react';
 
 interface VideoPreviewModalProps {
     isOpen: boolean;
@@ -17,165 +17,272 @@ export default function VideoPreviewModal({
     onClose,
     localizedVideoUrl,
     originalVideoUrl,
-    fileName
+    fileName,
 }: VideoPreviewModalProps) {
+    // false = localized, true = original
     const [showOriginal, setShowOriginal] = useState(false);
-    const [currentTime, setCurrentTime] = useState(0);
     const localizedVideoRef = useRef<HTMLVideoElement>(null);
     const originalVideoRef = useRef<HTMLVideoElement>(null);
 
-    // Sync time between videos when toggling
+    // Sync playback position when toggling
     const handleToggle = () => {
-        const activeVideo = showOriginal ? originalVideoRef.current : localizedVideoRef.current;
-        const nextVideo = showOriginal ? localizedVideoRef.current : originalVideoRef.current;
+        const activeRef = showOriginal ? originalVideoRef : localizedVideoRef;
+        const nextRef = showOriginal ? localizedVideoRef : originalVideoRef;
 
-        if (activeVideo && nextVideo) {
-            const time = activeVideo.currentTime;
-            setCurrentTime(time);
-            nextVideo.currentTime = time;
-
-            // If active video was playing, pause it and play the next
-            if (!activeVideo.paused) {
-                activeVideo.pause();
-                nextVideo.play().catch(() => { });
+        if (activeRef.current && nextRef.current) {
+            const time = activeRef.current.currentTime;
+            nextRef.current.currentTime = time;
+            if (!activeRef.current.paused) {
+                activeRef.current.pause();
+                nextRef.current.play().catch(() => { });
             }
         }
 
-        setShowOriginal(!showOriginal);
+        setShowOriginal((prev) => !prev);
     };
 
-    // Reset state when modal closes
+    // Reset when modal closes
     useEffect(() => {
         if (!isOpen) {
             setShowOriginal(false);
-            setCurrentTime(0);
+            if (localizedVideoRef.current) localizedVideoRef.current.pause();
+            if (originalVideoRef.current) originalVideoRef.current.pause();
         }
     }, [isOpen]);
 
-    if (!isOpen) return null;
+    // Close on Escape key
+    useEffect(() => {
+        const handleKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        if (isOpen) window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [isOpen, onClose]);
 
-    const currentUrl = showOriginal && originalVideoUrl ? originalVideoUrl : localizedVideoUrl;
     const hasOriginal = !!originalVideoUrl;
+    const currentUrl =
+        showOriginal && originalVideoUrl ? originalVideoUrl : localizedVideoUrl;
 
     return (
         <AnimatePresence>
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4"
-                onClick={onClose}
-            >
+            {isOpen && (
+                /* ── Full-screen overlay ───────────────────────────── */
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                    className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden"
-                    onClick={(e) => e.stopPropagation()}
+                    key="vpm-overlay"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                    style={{
+                        background: 'rgba(0,0,0,0.9)',
+                        backdropFilter: 'blur(16px)',
+                        WebkitBackdropFilter: 'blur(16px)',
+                    }}
+                    onClick={onClose}
                 >
-                    {/* Header with Magic Compare Toggle */}
-                    <div className="flex items-center justify-between p-4 border-b border-gray-800">
-                        <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2">
-                                <Play className="w-5 h-5 text-fuchsia-500" />
-                                <span className="text-white font-medium truncate max-w-[200px]">{fileName}</span>
+                    {/* ── Modal container ──────────────────────────── */}
+                    <motion.div
+                        key="vpm-container"
+                        initial={{ opacity: 0, scale: 0.85, y: 30 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.85, y: 30 }}
+                        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                        className="relative w-full max-w-4xl rounded-2xl overflow-hidden"
+                        style={{
+                            background: 'rgba(8,8,18,0.97)',
+                            border: '1px solid rgba(255,255,255,0.10)',
+                            boxShadow: '0 0 60px rgba(0,229,255,0.08), 0 0 120px rgba(255,0,255,0.04)',
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* ── Header ───────────────────────────────── */}
+                        <div
+                            className="flex items-center justify-between px-5 py-4"
+                            style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+                        >
+                            {/* Left: file name + badge */}
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div
+                                    className="p-2 rounded-lg flex-shrink-0"
+                                    style={{
+                                        background: 'rgba(0,229,255,0.08)',
+                                        border: '1px solid rgba(0,229,255,0.2)',
+                                    }}
+                                >
+                                    <Play className="w-4 h-4" style={{ color: '#00E5FF' }} />
+                                </div>
+                                <span
+                                    className="font-semibold text-white truncate max-w-[260px] text-sm"
+                                    title={fileName}
+                                >
+                                    {fileName}
+                                </span>
                             </div>
 
-                            {/* Magic Compare Toggle */}
+                            {/* Centre: Original / Localized toggle */}
                             {hasOriginal && (
-                                <div className="flex items-center gap-2 ml-4">
-                                    <span className={`text-sm font-medium transition-colors ${!showOriginal ? 'text-fuchsia-400' : 'text-gray-500'}`}>
+                                <div className="flex items-center gap-3 mx-4">
+                                    {/* Localized label */}
+                                    <span
+                                        className="text-xs font-bold uppercase tracking-widest transition-colors"
+                                        style={{
+                                            color: !showOriginal ? '#CCFF00' : 'rgba(255,255,255,0.3)',
+                                        }}
+                                    >
                                         Localized
                                     </span>
+
+                                    {/* Toggle pill */}
                                     <motion.button
                                         onClick={handleToggle}
-                                        className="relative w-14 h-7 rounded-full bg-gray-800 border border-gray-700 p-1 cursor-pointer"
-                                        whileHover={{ scale: 1.05 }}
+                                        className="relative w-14 h-7 rounded-full p-1 cursor-pointer flex-shrink-0"
+                                        style={{
+                                            background: 'rgba(255,255,255,0.07)',
+                                            border: '1px solid rgba(255,255,255,0.12)',
+                                        }}
                                         whileTap={{ scale: 0.95 }}
+                                        aria-label="Toggle between Localized and Original video"
                                     >
                                         <motion.div
-                                            className="w-5 h-5 rounded-full bg-gradient-to-r from-fuchsia-500 to-purple-600 shadow-lg"
-                                            animate={{ x: showOriginal ? 24 : 0 }}
-                                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                            className="w-5 h-5 rounded-full shadow-lg"
+                                            style={{
+                                                background: showOriginal
+                                                    ? 'linear-gradient(135deg, #00E5FF, #FF00FF)'
+                                                    : 'linear-gradient(135deg, #CCFF00, #00E5FF)',
+                                            }}
+                                            animate={{ x: showOriginal ? 26 : 0 }}
+                                            transition={{
+                                                type: 'spring',
+                                                stiffness: 500,
+                                                damping: 30,
+                                            }}
                                         />
                                     </motion.button>
-                                    <span className={`text-sm font-medium transition-colors ${showOriginal ? 'text-purple-400' : 'text-gray-500'}`}>
+
+                                    {/* Original label */}
+                                    <span
+                                        className="text-xs font-bold uppercase tracking-widest transition-colors"
+                                        style={{
+                                            color: showOriginal ? '#00E5FF' : 'rgba(255,255,255,0.3)',
+                                        }}
+                                    >
                                         Original
                                     </span>
                                 </div>
                             )}
+
+                            {/* Right: close button */}
+                            <motion.button
+                                onClick={onClose}
+                                whileHover={{ scale: 1.1, rotate: 90 }}
+                                whileTap={{ scale: 0.9 }}
+                                className="p-2 rounded-lg transition-colors flex-shrink-0"
+                                style={{
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    color: '#6b7280',
+                                }}
+                                title="Close"
+                                aria-label="Close video player"
+                            >
+                                <X className="w-5 h-5" />
+                            </motion.button>
                         </div>
 
-                        <motion.button
-                            onClick={onClose}
-                            whileHover={{ scale: 1.1, rotate: 90 }}
-                            whileTap={{ scale: 0.9 }}
-                            className="p-2 text-gray-500 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-                        >
-                            <X className="w-5 h-5" />
-                        </motion.button>
-                    </div>
+                        {/* ── Video Player Area ─────────────────────── */}
+                        <div className="relative bg-black aspect-video">
+                            {/* Version badge */}
+                            <AnimatePresence mode="wait">
+                                <motion.div
+                                    key={showOriginal ? 'badge-original' : 'badge-localized'}
+                                    initial={{ opacity: 0, y: -8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -8 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="absolute top-3 left-3 z-10"
+                                >
+                                    <span
+                                        className="px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-sm"
+                                        style={
+                                            showOriginal
+                                                ? {
+                                                    background: 'rgba(0,229,255,0.12)',
+                                                    border: '1px solid rgba(0,229,255,0.3)',
+                                                    color: '#00E5FF',
+                                                }
+                                                : {
+                                                    background: 'rgba(204,255,0,0.12)',
+                                                    border: '1px solid rgba(204,255,0,0.35)',
+                                                    color: '#CCFF00',
+                                                }
+                                        }
+                                    >
+                                        {showOriginal ? '🎬 Original Audio' : '✨ AI Localized'}
+                                    </span>
+                                </motion.div>
+                            </AnimatePresence>
 
-                    {/* Video Player Area */}
-                    <div className="relative bg-black aspect-video">
-                        {/* Badge showing current version */}
-                        <motion.div
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            key={showOriginal ? 'original' : 'localized'}
-                            className="absolute top-4 left-4 z-10"
-                        >
-                            <span className={`px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-sm ${showOriginal
-                                    ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                                    : 'bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30'
-                                }`}>
-                                {showOriginal ? '🎬 Original Audio' : '✨ AI Localized'}
-                            </span>
-                        </motion.div>
-
-                        {/* Localized Video (shown by default) */}
-                        <video
-                            ref={localizedVideoRef}
-                            controls
-                            autoPlay={!showOriginal}
-                            className={`w-full h-full ${showOriginal ? 'hidden' : 'block'}`}
-                            src={localizedVideoUrl}
-                        />
-
-                        {/* Original Video (hidden by default) */}
-                        {originalVideoUrl && (
+                            {/* Localized video */}
                             <video
-                                ref={originalVideoRef}
+                                ref={localizedVideoRef}
                                 controls
-                                autoPlay={showOriginal}
-                                className={`w-full h-full ${showOriginal ? 'block' : 'hidden'}`}
-                                src={originalVideoUrl}
+                                autoPlay={!showOriginal}
+                                className={`w-full h-full rounded-none ${showOriginal ? 'hidden' : 'block'}`}
+                                src={localizedVideoUrl}
+                                preload="metadata"
                             />
-                        )}
-                    </div>
 
-                    {/* Footer */}
-                    <div className="flex items-center justify-between p-4 border-t border-gray-800 bg-gray-900/50">
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                            <Volume2 className="w-4 h-4" />
-                            <span>{showOriginal ? 'Playing original audio' : 'Playing localized audio'}</span>
+                            {/* Original video */}
+                            {originalVideoUrl && (
+                                <video
+                                    ref={originalVideoRef}
+                                    controls
+                                    autoPlay={showOriginal}
+                                    className={`w-full h-full rounded-none ${showOriginal ? 'block' : 'hidden'}`}
+                                    src={originalVideoUrl}
+                                    preload="metadata"
+                                />
+                            )}
                         </div>
 
-                        <motion.a
-                            href={currentUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            whileHover={{ scale: 1.05, boxShadow: '0 0 25px rgba(168, 85, 247, 0.4)' }}
-                            whileTap={{ scale: 0.95 }}
-                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white font-bold rounded-lg text-sm"
+                        {/* ── Footer ───────────────────────────────── */}
+                        <div
+                            className="flex items-center justify-between px-5 py-3"
+                            style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
                         >
-                            <Download className="w-4 h-4" />
-                            Download {showOriginal ? 'Original' : 'Localized'}
-                        </motion.a>
-                    </div>
+                            <div className="flex items-center gap-2 text-xs text-gray-500">
+                                <Volume2 className="w-4 h-4" />
+                                <span>
+                                    {showOriginal
+                                        ? 'Playing original audio'
+                                        : 'Playing AI-localized audio'}
+                                </span>
+                            </div>
+
+                            <motion.a
+                                href={currentUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                whileHover={{
+                                    scale: 1.05,
+                                    boxShadow: '0 0 25px rgba(0,229,255,0.35)',
+                                }}
+                                whileTap={{ scale: 0.95 }}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all"
+                                style={{
+                                    background: 'rgba(0,229,255,0.1)',
+                                    border: '1px solid rgba(0,229,255,0.3)',
+                                    color: '#00E5FF',
+                                }}
+                            >
+                                <Download className="w-3.5 h-3.5" />
+                                Download {showOriginal ? 'Original' : 'Localized'}
+                            </motion.a>
+                        </div>
+                    </motion.div>
                 </motion.div>
-            </motion.div>
+            )}
         </AnimatePresence>
     );
 }

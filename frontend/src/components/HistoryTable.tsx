@@ -22,11 +22,29 @@ import {
     PartyPopper
 } from 'lucide-react';
 import { useHistory, HistoryVideo, useAuthenticatedApi } from '@/lib/auth-api';
-import { CulturalReportModal, CulturalInsight } from './CulturalReport';
+import { CulturalInsight, CulturalReportModal } from './CulturalReport';
 import VideoPreviewModal from './VideoPreviewModal';
 import { downloadSrt, Segment } from '@/lib/srt-utils';
 
-// Language display names
+// ─── Modal active-state types ──────────────────────────────────────────
+interface ActiveVideoModal {
+    output_url: string;
+    input_url?: string;
+    fileName: string;
+}
+interface ActiveYoutubeModal {
+    job_id: string;
+}
+interface ActiveInsightsModal {
+    insights: CulturalInsight[];
+    language: string;
+}
+interface ActiveDeleteModal {
+    job_id: string;
+    fileName: string;
+}
+
+// ─── Language display names ────────────────────────────────────────────
 const LANGUAGE_NAMES: Record<string, { name: string; native: string }> = {
     hindi: { name: 'Hindi', native: 'हिंदी' },
     tamil: { name: 'Tamil', native: 'தமிழ்' },
@@ -35,17 +53,17 @@ const LANGUAGE_NAMES: Record<string, { name: string; native: string }> = {
     marathi: { name: 'Marathi', native: 'मराठी' },
 };
 
-// Confetti — neon palette
+// ─── Confetti — neon palette ───────────────────────────────────────────
 function fireConfetti() {
     const count = 200;
     const defaults = { origin: { y: 0.7 }, zIndex: 9999 };
     const fire = (ratio: number, opts: confetti.Options) =>
         confetti({ ...defaults, ...opts, particleCount: Math.floor(count * ratio) });
     fire(0.25, { spread: 26, startVelocity: 55, colors: ['#00E5FF', '#FF00FF', '#CCFF00'] });
-    fire(0.2, { spread: 60, colors: ['#00E5FF', '#9000FF', '#FF00FF'] });
+    fire(0.20, { spread: 60, colors: ['#00E5FF', '#9000FF', '#FF00FF'] });
     fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8, colors: ['#FF00FF', '#00E5FF', '#CCFF00'] });
-    fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2, colors: ['#00E5FF', '#CCFF00'] });
-    fire(0.1, { spread: 120, startVelocity: 45, colors: ['#FF00FF', '#00E5FF'] });
+    fire(0.10, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2, colors: ['#00E5FF', '#CCFF00'] });
+    fire(0.10, { spread: 120, startVelocity: 45, colors: ['#FF00FF', '#00E5FF'] });
 }
 
 function formatRelativeTime(isoString: string): string {
@@ -62,17 +80,13 @@ function formatRelativeTime(isoString: string): string {
     return date.toLocaleDateString();
 }
 
-// ─── Status Badge ─────────────────────────────────────────────────────
+// ─── Status Badge ──────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
     if (status === 'complete') {
         return (
             <span
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold"
-                style={{
-                    background: 'rgba(204,255,0,0.1)',
-                    border: '1px solid rgba(204,255,0,0.35)',
-                    color: '#CCFF00',
-                }}
+                style={{ background: 'rgba(204,255,0,0.1)', border: '1px solid rgba(204,255,0,0.35)', color: '#CCFF00' }}
             >
                 <CheckCircle className="w-3.5 h-3.5" /> Complete
             </span>
@@ -82,11 +96,7 @@ function StatusBadge({ status }: { status: string }) {
         return (
             <span
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold"
-                style={{
-                    background: 'rgba(255,60,60,0.1)',
-                    border: '1px solid rgba(255,60,60,0.3)',
-                    color: '#ff6060',
-                }}
+                style={{ background: 'rgba(255,60,60,0.1)', border: '1px solid rgba(255,60,60,0.3)', color: '#ff6060' }}
             >
                 <XCircle className="w-3.5 h-3.5" /> Failed
             </span>
@@ -95,18 +105,14 @@ function StatusBadge({ status }: { status: string }) {
     return (
         <span
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold"
-            style={{
-                background: 'rgba(0,229,255,0.08)',
-                border: '1px solid rgba(0,229,255,0.35)',
-                color: '#00E5FF',
-            }}
+            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.35)', color: '#00E5FF' }}
         >
             <Loader2 className="w-3.5 h-3.5 animate-spin" /> Processing
         </span>
     );
 }
 
-// ─── Copy Button ──────────────────────────────────────────────────────
+// ─── Copy Button ───────────────────────────────────────────────────────
 function CopyButton({ text, label }: { text: string; label: string }) {
     const [copied, setCopied] = useState(false);
     const handleCopy = async () => {
@@ -134,8 +140,17 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     );
 }
 
-// ─── YouTube Modal ────────────────────────────────────────────────────
-function YouTubeMetadataModal({ isOpen, onClose, jobId }: { isOpen: boolean; onClose: () => void; jobId: string }) {
+// ─── YouTube Modal ─────────────────────────────────────────────────────
+// Rendered at root level — receives job_id and close callback
+function YouTubeMetadataModal({
+    isOpen,
+    onClose,
+    jobId,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    jobId: string;
+}) {
     const [metadata, setMetadata] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -154,12 +169,18 @@ function YouTubeMetadataModal({ isOpen, onClose, jobId }: { isOpen: boolean; onC
         }
     };
 
-    if (isOpen && !metadata && !loading && !error) fetchMetadata();
+    // Fetch when opening; reset when closing
+    useEffect(() => {
+        if (isOpen && jobId) { setMetadata(null); fetchMetadata(); }
+        if (!isOpen) { setMetadata(null); setError(null); }
+    }, [isOpen, jobId]); // eslint-disable-line react-hooks/exhaustive-deps
+
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(16px)' }}
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(16px)' }}
             onClick={onClose}
         >
             <motion.div
@@ -167,17 +188,14 @@ function YouTubeMetadataModal({ isOpen, onClose, jobId }: { isOpen: boolean; onC
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                 className="max-w-2xl w-full max-h-[80vh] overflow-hidden rounded-2xl"
-                style={{ background: 'rgba(10,10,20,0.95)', border: '1px solid rgba(255,255,255,0.1)' }}
+                style={{ background: 'rgba(10,10,20,0.97)', border: '1px solid rgba(255,255,255,0.1)' }}
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between p-5"
-                    style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
-                >
+                <div className="flex items-center justify-between p-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                            style={{ background: 'rgba(255,0,0,0.12)', border: '1px solid rgba(255,0,0,0.3)' }}
-                        >
+                            style={{ background: 'rgba(255,0,0,0.12)', border: '1px solid rgba(255,0,0,0.3)' }}>
                             <Youtube className="w-5 h-5 text-red-400" />
                         </div>
                         <div>
@@ -209,8 +227,7 @@ function YouTubeMetadataModal({ isOpen, onClose, jobId }: { isOpen: boolean; onC
                     )}
                     {error && (
                         <div className="rounded-lg p-4 text-center"
-                            style={{ background: 'rgba(255,60,60,0.05)', border: '1px solid rgba(255,60,60,0.25)' }}
-                        >
+                            style={{ background: 'rgba(255,60,60,0.05)', border: '1px solid rgba(255,60,60,0.25)' }}>
                             <p className="text-red-400">{error}</p>
                             <motion.button
                                 onClick={fetchMetadata}
@@ -225,12 +242,11 @@ function YouTubeMetadataModal({ isOpen, onClose, jobId }: { isOpen: boolean; onC
                     {metadata && !loading && (
                         <div className="space-y-4">
                             {[
-                                { key: 'title', label: 'Title', content: metadata.title, mono: false },
-                                { key: 'description', label: 'Description', content: metadata.description, mono: false },
-                            ].map(({ key, label, content, mono }) => (
+                                { key: 'title', label: 'Title', content: metadata.title },
+                                { key: 'description', label: 'Description', content: metadata.description },
+                            ].map(({ key, label, content }) => (
                                 <div key={key} className="rounded-xl p-4"
-                                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
-                                >
+                                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                                     <div className="flex items-center justify-between mb-2">
                                         <label className="text-sm font-medium text-gray-500">{label}</label>
                                         <CopyButton text={content} label="Copy" />
@@ -239,8 +255,7 @@ function YouTubeMetadataModal({ isOpen, onClose, jobId }: { isOpen: boolean; onC
                                 </div>
                             ))}
                             <div className="rounded-xl p-4"
-                                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
-                            >
+                                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                                 <div className="flex items-center justify-between mb-3">
                                     <label className="text-sm font-medium text-gray-500">Tags</label>
                                     <CopyButton text={metadata.tags?.join(', ') || ''} label="Copy All" />
@@ -248,8 +263,7 @@ function YouTubeMetadataModal({ isOpen, onClose, jobId }: { isOpen: boolean; onC
                                 <div className="flex flex-wrap gap-2">
                                     {metadata.tags?.map((tag: string, i: number) => (
                                         <span key={i} className="px-2 py-1 rounded text-xs"
-                                            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}
-                                        >
+                                            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}>
                                             {tag}
                                         </span>
                                     ))}
@@ -263,14 +277,25 @@ function YouTubeMetadataModal({ isOpen, onClose, jobId }: { isOpen: boolean; onC
     );
 }
 
-// ─── Delete Confirm Modal ─────────────────────────────────────────────
-function DeleteConfirmModal({ isOpen, onClose, onConfirm, fileName, isDeleting }: {
-    isOpen: boolean; onClose: () => void; onConfirm: () => void; fileName: string; isDeleting: boolean;
+// ─── Delete Confirm Modal ──────────────────────────────────────────────
+function DeleteConfirmModal({
+    isOpen,
+    onClose,
+    onConfirm,
+    fileName,
+    isDeleting,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    onConfirm: () => void;
+    fileName: string;
+    isDeleting: boolean;
 }) {
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(16px)' }}
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(16px)' }}
             onClick={onClose}
         >
             <motion.div
@@ -283,8 +308,7 @@ function DeleteConfirmModal({ isOpen, onClose, onConfirm, fileName, isDeleting }
             >
                 <div className="p-6 text-center">
                     <div className="w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center"
-                        style={{ background: 'rgba(255,60,60,0.08)', border: '1px solid rgba(255,60,60,0.3)' }}
-                    >
+                        style={{ background: 'rgba(255,60,60,0.08)', border: '1px solid rgba(255,60,60,0.3)' }}>
                         <Trash2 className="w-7 h-7 text-red-400" />
                     </div>
                     <h3 className="text-xl font-bold text-white mb-2">Delete Video?</h3>
@@ -319,23 +343,22 @@ function DeleteConfirmModal({ isOpen, onClose, onConfirm, fileName, isDeleting }
     );
 }
 
-// ─── Action Button ────────────────────────────────────────────────────
+// ─── Action Button ─────────────────────────────────────────────────────
 function ActionButton({ onClick, icon: Icon, title, variant = 'default', disabled = false, href }: {
-    onClick?: () => void; icon: any; title: string; variant?: 'default' | 'danger'; disabled?: boolean; href?: string;
+    onClick?: () => void;
+    icon: any;
+    title: string;
+    variant?: 'default' | 'danger';
+    disabled?: boolean;
+    href?: string;
 }) {
-    const style =
-        variant === 'danger'
-            ? { color: '#64748b' }
-            : { color: '#64748b' };
+    const style = variant === 'danger' ? { color: '#64748b' } : { color: '#64748b' };
 
     const content = (
         <motion.button
             onClick={onClick}
             disabled={disabled}
-            whileHover={{
-                scale: 1.15,
-                color: variant === 'danger' ? '#ff6060' : '#00E5FF',
-            }}
+            whileHover={{ scale: 1.15, color: variant === 'danger' ? '#ff6060' : '#00E5FF' }}
             whileTap={{ scale: 0.9 }}
             className="p-2 rounded-lg transition-colors disabled:opacity-50"
             style={style}
@@ -364,33 +387,47 @@ function ActionButton({ onClick, icon: Icon, title, variant = 'default', disable
     return content;
 }
 
-// ─── Video Row (Card) ─────────────────────────────────────────────────
-function VideoRow({ video, onDelete, onFirstDownload }: {
+// ─── Video Row (Card) ──────────────────────────────────────────────────
+// No modal state or modal rendering here — this component only fires callbacks.
+interface VideoRowCallbacks {
+    onOpenVideo: (v: ActiveVideoModal) => void;
+    onOpenYoutube: (v: ActiveYoutubeModal) => void;
+    onOpenInsights: (v: ActiveInsightsModal) => void;
+    onOpenDelete: (v: ActiveDeleteModal) => void;
+}
+
+function VideoRow({
+    video,
+    onFirstDownload,
+    onOpenVideo,
+    onOpenYoutube,
+    onOpenInsights,
+    onOpenDelete,
+}: {
     video: HistoryVideo;
-    onDelete: (jobId: string) => void;
     onFirstDownload: (jobId: string) => void;
-}) {
-    const [showYouTubeModal, setShowYouTubeModal] = useState(false);
-    const [showInsightsModal, setShowInsightsModal] = useState(false);
-    const [showVideoPreview, setShowVideoPreview] = useState(false);
-    const [showDeleteModal, setShowDeleteModal] = useState(false);
-    const [culturalInsights, setCulturalInsights] = useState<CulturalInsight[]>([]);
+} & VideoRowCallbacks) {
     const [segments, setSegments] = useState<Segment[]>([]);
     const [loadingSrt, setLoadingSrt] = useState(false);
-    const [isDeleting, setIsDeleting] = useState(false);
+    const [fetchingInsights, setFetchingInsights] = useState(false);
     const api = useAuthenticatedApi();
 
     const language = LANGUAGE_NAMES[video.target_language] || { name: video.target_language, native: '' };
     const fileName = video.input_file.split('/').pop() || 'Video';
 
     const handleShowInsights = async () => {
-        setShowInsightsModal(true);
-        if (culturalInsights.length === 0) {
-            try {
-                const response = await api.get(`/api/video/job/${video.job_id}/analysis`);
-                if (response.data?.cultural_analysis) setCulturalInsights(response.data.cultural_analysis);
-                if (response.data?.segments) setSegments(response.data.segments);
-            } catch { }
+        setFetchingInsights(true);
+        try {
+            const response = await api.get(`/api/video/job/${video.job_id}/analysis`);
+            const insights = response.data?.cultural_analysis ?? [];
+            const segs = response.data?.segments ?? [];
+            if (segs.length > 0) setSegments(segs);
+            onOpenInsights({ insights, language: language.name });
+        } catch {
+            // Still open modal even with empty insights
+            onOpenInsights({ insights: [], language: language.name });
+        } finally {
+            setFetchingInsights(false);
         }
     };
 
@@ -406,101 +443,99 @@ function VideoRow({ video, onDelete, onFirstDownload }: {
         } catch { } finally { setLoadingSrt(false); }
     };
 
-    const handleDelete = async () => {
-        setIsDeleting(true);
-        try {
-            await api.delete(`/api/video/${video.job_id}`);
-            setShowDeleteModal(false);
-            onDelete(video.job_id);
-        } catch { } finally { setIsDeleting(false); }
-    };
-
     const handleDownloadClick = () => {
         onFirstDownload(video.job_id);
         if (video.output_url) window.open(video.output_url, '_blank');
     };
 
     return (
-        <>
+        <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileHover={{ scale: 1.015, y: -2 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className="flex items-center gap-4 p-4 rounded-xl transition-all"
+            style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.07)',
+                marginBottom: '8px',
+            }}
+        >
+            {/* Thumbnail */}
             <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                whileHover={{ scale: 1.015, y: -2 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                className="flex items-center gap-4 p-4 rounded-xl transition-all"
-                style={{
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.07)',
-                    marginBottom: '8px',
-                }}
+                whileHover={{ scale: 1.05 }}
+                className="relative w-20 h-14 rounded-xl flex items-center justify-center flex-shrink-0 cursor-pointer group overflow-hidden"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+                onClick={() =>
+                    video.status === 'complete' && video.output_url &&
+                    onOpenVideo({ output_url: video.output_url, input_url: video.input_url, fileName })
+                }
             >
-                {/* Thumbnail */}
-                <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    className="relative w-20 h-14 rounded-xl flex items-center justify-center flex-shrink-0 cursor-pointer group overflow-hidden"
-                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
-                    onClick={() => video.status === 'complete' && video.output_url && setShowVideoPreview(true)}
-                >
-                    <Video className="w-5 h-5 text-gray-600 group-hover:hidden" />
-                    {video.status === 'complete' && video.output_url && (
-                        <Play className="w-5 h-5 hidden group-hover:block" style={{ color: '#FF00FF' }} />
-                    )}
-                </motion.div>
-
-                {/* Info */}
-                <div className="flex-grow min-w-0">
-                    <h3 className="font-medium text-white truncate">{fileName}</h3>
-                    <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
-                        <span className="text-gray-400">{language.name}</span>
-                        <span className="text-gray-700">•</span>
-                        <span>{formatRelativeTime(video.created_at)}</span>
-                        {video.file_size_mb && (
-                            <>
-                                <span className="text-gray-700">•</span>
-                                <span>{video.file_size_mb.toFixed(1)} MB</span>
-                            </>
-                        )}
-                    </div>
-                </div>
-
-                {/* Status */}
-                <StatusBadge status={video.status} />
-
-                {/* Actions */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                    {video.status === 'complete' && video.output_url && (
-                        <>
-                            <ActionButton onClick={handleDownloadClick} icon={Download} title="Download" />
-                            {video.subtitle_url ? (
-                                <ActionButton href={video.subtitle_url} icon={FileText} title="Download Subtitles (VTT)" />
-                            ) : (
-                                <ActionButton onClick={handleDownloadSrt} icon={loadingSrt ? Loader2 : FileText} title="Download SRT" disabled={loadingSrt} />
-                            )}
-                            <ActionButton onClick={handleShowInsights} icon={Eye} title="Cultural Insights" />
-                            <ActionButton onClick={() => setShowYouTubeModal(true)} icon={Youtube} title="YouTube Export" />
-                        </>
-                    )}
-                    <ActionButton onClick={() => setShowDeleteModal(true)} icon={Trash2} title="Delete" variant="danger" />
-                </div>
+                <Video className="w-5 h-5 text-gray-600 group-hover:hidden" />
+                {video.status === 'complete' && video.output_url && (
+                    <Play className="w-5 h-5 hidden group-hover:block" style={{ color: '#FF00FF' }} />
+                )}
             </motion.div>
 
-            <YouTubeMetadataModal isOpen={showYouTubeModal} onClose={() => setShowYouTubeModal(false)} jobId={video.job_id} />
-            <CulturalReportModal isOpen={showInsightsModal} onClose={() => setShowInsightsModal(false)} insights={culturalInsights} language={language.name} />
-            {video.output_url && (
-                <VideoPreviewModal
-                    isOpen={showVideoPreview}
-                    onClose={() => setShowVideoPreview(false)}
-                    localizedVideoUrl={video.output_url}
-                    originalVideoUrl={video.input_url}
-                    fileName={fileName}
+            {/* Info */}
+            <div className="flex-grow min-w-0">
+                <h3 className="font-medium text-white truncate">{fileName}</h3>
+                <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
+                    <span className="text-gray-400">{language.name}</span>
+                    <span className="text-gray-700">•</span>
+                    <span>{formatRelativeTime(video.created_at)}</span>
+                    {video.file_size_mb && (
+                        <>
+                            <span className="text-gray-700">•</span>
+                            <span>{video.file_size_mb.toFixed(1)} MB</span>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Status */}
+            <StatusBadge status={video.status} />
+
+            {/* Actions */}
+            <div className="flex items-center gap-1 flex-shrink-0">
+                {video.status === 'complete' && video.output_url && (
+                    <>
+                        <ActionButton onClick={handleDownloadClick} icon={Download} title="Download" />
+                        {video.subtitle_url ? (
+                            <ActionButton href={video.subtitle_url} icon={FileText} title="Download Subtitles (VTT)" />
+                        ) : (
+                            <ActionButton
+                                onClick={handleDownloadSrt}
+                                icon={loadingSrt ? Loader2 : FileText}
+                                title="Download SRT"
+                                disabled={loadingSrt}
+                            />
+                        )}
+                        <ActionButton
+                            onClick={handleShowInsights}
+                            icon={fetchingInsights ? Loader2 : Eye}
+                            title="Cultural Insights"
+                            disabled={fetchingInsights}
+                        />
+                        <ActionButton
+                            onClick={() => onOpenYoutube({ job_id: video.job_id })}
+                            icon={Youtube}
+                            title="YouTube Export"
+                        />
+                    </>
+                )}
+                <ActionButton
+                    onClick={() => onOpenDelete({ job_id: video.job_id, fileName })}
+                    icon={Trash2}
+                    title="Delete"
+                    variant="danger"
                 />
-            )}
-            <DeleteConfirmModal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)} onConfirm={handleDelete} fileName={fileName} isDeleting={isDeleting} />
-        </>
+            </div>
+        </motion.div>
     );
 }
 
-// ─── Empty State ───────────────────────────────────────────────────────
+// ─── Empty State ────────────────────────────────────────────────────────
 function EmptyState() {
     return (
         <div className="text-center py-16">
@@ -526,7 +561,7 @@ function EmptyState() {
     );
 }
 
-// ─── Loading Skeleton ──────────────────────────────────────────────────
+// ─── Loading Skeleton ───────────────────────────────────────────────────
 function LoadingSkeleton() {
     return (
         <div className="space-y-2">
@@ -548,12 +583,20 @@ function LoadingSkeleton() {
     );
 }
 
-// ─── Main Export ───────────────────────────────────────────────────────
+// ─── Main Export ────────────────────────────────────────────────────────
 export default function HistoryTable() {
     const { data, loading, error, refetch } = useHistory();
     const [videos, setVideos] = useState<HistoryVideo[]>([]);
     const [downloadedJobs, setDownloadedJobs] = useState<Set<string>>(new Set());
     const prevStatusesRef = useRef<Map<string, string>>(new Map());
+
+    // ── Modal states (all at root — outside every motion.div) ──────────
+    const [activeVideoModal, setActiveVideoModal] = useState<ActiveVideoModal | null>(null);
+    const [activeYoutubeModal, setActiveYoutubeModal] = useState<ActiveYoutubeModal | null>(null);
+    const [activeInsightsModal, setActiveInsightsModal] = useState<ActiveInsightsModal | null>(null);
+    const [activeDeleteModal, setActiveDeleteModal] = useState<ActiveDeleteModal | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const api = useAuthenticatedApi();
 
     useEffect(() => {
         if (data?.videos) {
@@ -569,13 +612,25 @@ export default function HistoryTable() {
         }
     }, [data?.videos]);
 
-    const handleDelete = (jobId: string) => setVideos(prev => prev.filter(v => v.job_id !== jobId));
+    const handleDeleteVideo = (jobId: string) =>
+        setVideos(prev => prev.filter(v => v.job_id !== jobId));
 
     const handleFirstDownload = (jobId: string) => {
         if (!downloadedJobs.has(jobId)) {
             fireConfetti();
             setDownloadedJobs(prev => new Set([...prev, jobId]));
         }
+    };
+
+    // Delete lives here so it can mutate the video list after success
+    const handleConfirmDelete = async () => {
+        if (!activeDeleteModal) return;
+        setIsDeleting(true);
+        try {
+            await api.delete(`/api/video/${activeDeleteModal.job_id}`);
+            handleDeleteVideo(activeDeleteModal.job_id);
+            setActiveDeleteModal(null);
+        } catch { } finally { setIsDeleting(false); }
     };
 
     return (
@@ -630,13 +685,53 @@ export default function HistoryTable() {
                             <VideoRow
                                 key={video.job_id}
                                 video={video}
-                                onDelete={handleDelete}
                                 onFirstDownload={handleFirstDownload}
+                                onOpenVideo={setActiveVideoModal}
+                                onOpenYoutube={setActiveYoutubeModal}
+                                onOpenInsights={setActiveInsightsModal}
+                                onOpenDelete={setActiveDeleteModal}
                             />
                         ))}
                     </div>
                 )}
             </div>
+
+            {/* ── Root-level Modals ──────────────────────────────────────
+                Rendered OUTSIDE every motion.div / transform container.
+                This prevents the CSS stacking context created by framer-motion
+                whileHover transforms from clipping fixed-position overlays.
+            ─────────────────────────────────────────────────────────── */}
+
+            {activeVideoModal && (
+                <VideoPreviewModal
+                    isOpen
+                    onClose={() => setActiveVideoModal(null)}
+                    localizedVideoUrl={activeVideoModal.output_url}
+                    originalVideoUrl={activeVideoModal.input_url}
+                    fileName={activeVideoModal.fileName}
+                />
+            )}
+
+            <YouTubeMetadataModal
+                isOpen={!!activeYoutubeModal}
+                onClose={() => setActiveYoutubeModal(null)}
+                jobId={activeYoutubeModal?.job_id ?? ''}
+            />
+
+            <CulturalReportModal
+                isOpen={!!activeInsightsModal}
+                onClose={() => setActiveInsightsModal(null)}
+                insights={activeInsightsModal?.insights ?? []}
+                language={activeInsightsModal?.language}
+            />
+
+            <DeleteConfirmModal
+                isOpen={!!activeDeleteModal}
+                onClose={() => { if (!isDeleting) setActiveDeleteModal(null); }}
+                onConfirm={handleConfirmDelete}
+                fileName={activeDeleteModal?.fileName ?? ''}
+                isDeleting={isDeleting}
+            />
         </div>
     );
 }

@@ -205,11 +205,8 @@ export default function DashboardPage() {
                 </div>
 
                 {/* History Table */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="rounded-2xl p-6 overflow-hidden"
+                <div
+                    className="rounded-2xl p-6"
                     style={{
                         background: 'rgba(255,255,255,0.03)',
                         backdropFilter: 'blur(12px)',
@@ -218,7 +215,7 @@ export default function DashboardPage() {
                     }}
                 >
                     <HistoryTable />
-                </motion.div>
+                </div>
             </div>
 
             {/* FAB */}
