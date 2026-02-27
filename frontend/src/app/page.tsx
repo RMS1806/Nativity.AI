@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { Sparkles, ArrowRight, RefreshCw, LayoutDashboard, Play, Globe, Mic, Zap, Terminal } from 'lucide-react';
 import { SignInButton, SignedIn, SignedOut, UserButton, useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
@@ -20,127 +20,155 @@ import {
 } from '@/lib/api';
 import { AppState, Language, LocalizationJob, JobStatus } from '@/types';
 
-// Animated Button Component
-function GlowButton({ children, onClick, className = '', href }: { children: React.ReactNode; onClick?: () => void; className?: string; href?: string }) {
+// ─── Neon Glow Button ────────────────────────────────────────────────
+function GlowButton({ children, onClick, className = '', href }: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  className?: string;
+  href?: string;
+}) {
   const buttonContent = (
     <motion.button
       onClick={onClick}
-      whileHover={{ scale: 1.05, boxShadow: '0 0 40px rgba(168, 85, 247, 0.4)' }}
-      whileTap={{ scale: 0.98 }}
-      className={`relative overflow-hidden group px-8 py-4 bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 text-white text-lg font-bold rounded-xl transition-all duration-300 ${className}`}
+      whileHover={{ scale: 1.05, boxShadow: '0 0 50px rgba(0, 229, 255, 0.4)' }}
+      whileTap={{ scale: 0.97 }}
+      className={`relative overflow-hidden group px-8 py-4 text-white text-lg font-bold rounded-xl transition-all duration-300 ${className}`}
+      style={{
+        background: 'linear-gradient(135deg, #00E5FF 0%, #9000FF 50%, #FF00FF 100%)',
+        boxShadow: '0 0 30px rgba(0, 229, 255, 0.25)',
+      }}
     >
-      {/* Shimmer effect */}
-      <motion.div
-        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full"
-        animate={{ translateX: ['−100%', '100%'] }}
-        transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+      {/* Shimmer */}
+      <span
+        className="shimmer-overlay rounded-xl"
+        style={{ animationDuration: '2.5s' }}
       />
       <span className="relative z-10 flex items-center gap-3">{children}</span>
     </motion.button>
   );
 
-  if (href) {
-    return <Link href={href}>{buttonContent}</Link>;
-  }
+  if (href) return <Link href={href}>{buttonContent}</Link>;
   return buttonContent;
 }
 
-// Hero Section - Pure Dark Tech Theme
+// ─── Hero Section ─────────────────────────────────────────────────────
 function HeroSection() {
+  const containerVariants: Variants = {
+    hidden: {},
+    show: {
+      transition: { staggerChildren: 0.12 },
+    },
+  };
+
+  const itemVariants: Variants = {
+    hidden: { opacity: 0, y: 30 },
+    show: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] as const },
+    },
+  };
+
+  const features = [
+    { icon: Play, label: 'Video Analysis', color: '#00E5FF' },
+    { icon: Globe, label: 'Cultural Adaptation', color: '#FF00FF' },
+    { icon: Mic, label: 'Natural TTS', color: '#CCFF00' },
+  ];
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col items-center justify-center min-h-[75vh] text-center px-4"
-    >
+    <div className="flex flex-col items-center justify-center min-h-[75vh] text-center px-4">
       <div className="max-w-4xl mx-auto">
-        {/* Terminal-style Badge */}
+        {/* Badge */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
+          initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.1 }}
-          className="inline-flex items-center gap-2 px-4 py-2 mb-8 rounded-lg bg-gray-900 border border-gray-800"
+          transition={{ delay: 0.05, duration: 0.5 }}
+          className="inline-flex items-center gap-2 px-4 py-2 mb-8 rounded-lg"
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(0,229,255,0.2)',
+          }}
         >
-          <Terminal className="w-4 h-4 text-fuchsia-500" />
+          <Terminal className="w-4 h-4" style={{ color: '#00E5FF' }} />
           <span className="text-sm font-mono text-gray-300">
-            <span className="text-fuchsia-500">$</span> powered_by <span className="text-purple-400">Gemini AI</span>
+            <span style={{ color: '#00E5FF' }}>$</span> powered_by{' '}
+            <span style={{ color: '#FF00FF' }}>Gemini AI</span>
           </span>
         </motion.div>
 
-        {/* Headline */}
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="text-5xl sm:text-6xl lg:text-7xl font-bold mb-6 leading-tight"
-        >
-          <span className="text-white">Hyper-localize your</span>
-          <br />
-          <span className="bg-clip-text text-transparent bg-gradient-to-r from-fuchsia-500 via-purple-500 to-violet-500">
-            videos for Bharat
-          </span>
-        </motion.h1>
-
-        {/* Subhead */}
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto"
-        >
-          AI-powered dubbing in{' '}
-          <span className="text-white font-semibold">Hindi</span>,{' '}
-          <span className="text-white font-semibold">Tamil</span>, and{' '}
-          <span className="text-white font-semibold">Bengali</span>.
-        </motion.p>
-
-        {/* CTA Button */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          className="space-y-4"
         >
-          <SignInButton mode="modal">
-            <GlowButton>
-              <Zap className="w-5 h-5" />
-              Get Started
-              <ArrowRight className="w-5 h-5" />
-            </GlowButton>
-          </SignInButton>
+          {/* Headline */}
+          <motion.h1
+            variants={itemVariants}
+            className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-tight"
+          >
+            <span className="text-white">Hyper-localize your</span>
+            <br />
+            <span className="neon-text-gradient">videos for Bharat</span>
+          </motion.h1>
+
+          {/* Subhead */}
+          <motion.p
+            variants={itemVariants}
+            className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto"
+          >
+            AI-powered dubbing in{' '}
+            <span className="text-white font-semibold">Hindi</span>,{' '}
+            <span className="text-white font-semibold">Tamil</span>, and{' '}
+            <span className="text-white font-semibold">Bengali</span>.
+          </motion.p>
+
+          {/* CTA */}
+          <motion.div variants={itemVariants}>
+            <SignInButton mode="modal">
+              <GlowButton>
+                <Zap className="w-5 h-5" />
+                Get Started
+                <ArrowRight className="w-5 h-5" />
+              </GlowButton>
+            </SignInButton>
+          </motion.div>
         </motion.div>
 
-        {/* Feature Cards - Dark Tech Style */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="flex flex-wrap justify-center gap-4 mt-16"
-        >
-          {[
-            { icon: Play, label: 'Video Analysis', color: 'text-fuchsia-500' },
-            { icon: Globe, label: 'Cultural Adaptation', color: 'text-purple-500' },
-            { icon: Mic, label: 'Natural TTS', color: 'text-violet-500' },
-          ].map((feature, index) => (
+        {/* Feature Cards */}
+        <div className="flex flex-wrap justify-center gap-4 mt-16">
+          {features.map((feature, index) => (
             <motion.div
               key={feature.label}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 + index * 0.1 }}
-              whileHover={{ scale: 1.05, borderColor: 'rgba(168, 85, 247, 0.5)' }}
-              className="flex items-center gap-3 px-5 py-3 bg-gray-900/80 border border-gray-800 rounded-xl cursor-default transition-colors"
+              transition={{ delay: 0.5 + index * 0.12, duration: 0.5 }}
+              whileHover={{ scale: 1.06, y: -3 }}
+              className="flex items-center gap-3 px-5 py-3 rounded-xl cursor-default"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                backdropFilter: 'blur(12px)',
+                border: `1px solid rgba(255,255,255,0.08)`,
+                transition: 'border-color 0.3s',
+              }}
             >
-              <div className="w-9 h-9 rounded-lg bg-gray-800 flex items-center justify-center">
-                <feature.icon className={`w-4 h-4 ${feature.color}`} />
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center"
+                style={{ background: `${feature.color}18` }}
+              >
+                <feature.icon className="w-4 h-4" style={{ color: feature.color }} />
               </div>
               <span className="text-sm text-gray-300 font-medium">{feature.label}</span>
             </motion.div>
           ))}
-        </motion.div>
+        </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
+// ─── Main Page ────────────────────────────────────────────────────────
 export default function Home() {
   const { getToken } = useAuth();
   const [appState, setAppState] = useState<AppState>('IDLE');
@@ -172,7 +200,6 @@ export default function Home() {
       try {
         const job = await getJobStatus(currentJob.job_id);
         setCurrentJob(job);
-
         if (job.status === 'complete') {
           setAppState('COMPLETED');
           clearInterval(pollInterval);
@@ -184,7 +211,7 @@ export default function Home() {
       } catch (err) {
         console.error('Failed to poll job status:', err);
       }
-    }, 3000); // Poll every 3 seconds
+    }, 3000);
 
     return () => clearInterval(pollInterval);
   }, [appState, currentJob?.job_id]);
@@ -196,7 +223,6 @@ export default function Home() {
 
   const handleStartProcessing = async () => {
     if (!selectedFile) return;
-
     try {
       setAppState('UPLOADING');
       setUploadProgress(0);
@@ -220,7 +246,6 @@ export default function Home() {
         input_file: uploadData.file_key,
         target_language: selectedLanguage,
       });
-
     } catch (err: any) {
       console.error('Processing error:', err);
       setError(err.response?.data?.detail || err.message || 'An error occurred');
@@ -238,156 +263,195 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen">
-      {/* Navbar - Pure Dark */}
-      <header className="sticky top-0 z-50 bg-black/95 backdrop-blur-sm border-b border-gray-900">
-        <div className="max-w-6xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-2 group">
-              <motion.div
-                whileHover={{ rotate: 180 }}
-                transition={{ duration: 0.3 }}
-                className="w-9 h-9 rounded-lg bg-gradient-to-r from-fuchsia-600 to-purple-600 flex items-center justify-center"
-              >
-                <Zap className="w-4 h-4 text-white" />
-              </motion.div>
-              <span className="text-xl font-bold text-white">
-                Nativity<span className="text-fuchsia-500">.</span>ai
-              </span>
-            </Link>
+    <main className="min-h-screen flex flex-col">
+      {/* ── Floating Glass Navbar ─────────────────────────────── */}
+      <div className="sticky top-0 z-50 pt-4 px-4 pointer-events-none">
+        <nav
+          className="max-w-5xl mx-auto flex items-center justify-between px-6 py-3 rounded-full pointer-events-auto"
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          }}
+        >
+          {/* Logo */}
+          <Link href="/" className="flex items-center gap-2 group">
+            <motion.div
+              whileHover={{ rotate: 180, scale: 1.1 }}
+              transition={{ duration: 0.3 }}
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg, #00E5FF, #FF00FF)' }}
+            >
+              <Zap className="w-4 h-4 text-black" />
+            </motion.div>
+            <span className="text-xl font-bold neon-text-gradient">
+              Nativity.ai
+            </span>
+          </Link>
 
-            <div className="flex items-center gap-3">
-              <SignedIn>
-                {appState !== 'IDLE' && (
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={handleReset}
-                    className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-lg transition-all"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Start Over
-                  </motion.button>
-                )}
-                <Link href="/dashboard">
-                  <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-400 hover:text-white bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-lg transition-all"
-                  >
-                    <LayoutDashboard className="w-4 h-4" />
-                    Dashboard
-                  </motion.div>
-                </Link>
-                <UserButton afterSignOutUrl="/" />
-              </SignedIn>
+          {/* Nav Actions */}
+          <div className="flex items-center gap-3">
+            <SignedIn>
+              {appState !== 'IDLE' && (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleReset}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 hover:text-white rounded-full transition-all"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Start Over
+                </motion.button>
+              )}
+              <Link href="/dashboard">
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-400 hover:text-white rounded-full transition-all"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Dashboard
+                </motion.div>
+              </Link>
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
 
-              <SignedOut>
-                <SignInButton mode="modal">
-                  <motion.button
-                    whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(168, 85, 247, 0.3)' }}
-                    whileTap={{ scale: 0.95 }}
-                    className="px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-fuchsia-600 to-purple-600 rounded-lg transition-all"
-                  >
-                    Sign In
-                  </motion.button>
-                </SignInButton>
-              </SignedOut>
-            </div>
+            <SignedOut>
+              <SignInButton mode="modal">
+                <motion.button
+                  whileHover={{ scale: 1.05, boxShadow: '0 0 25px rgba(0,229,255,0.4)' }}
+                  whileTap={{ scale: 0.95 }}
+                  className="px-5 py-2 text-sm font-bold text-black rounded-full transition-all"
+                  style={{ background: 'linear-gradient(135deg, #00E5FF, #FF00FF)' }}
+                >
+                  Sign In
+                </motion.button>
+              </SignInButton>
+            </SignedOut>
           </div>
-        </div>
-      </header>
+        </nav>
+      </div>
 
-      {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-6 py-8">
+      {/* ── Main Content ──────────────────────────────────────── */}
+      <div className="flex-1 max-w-6xl mx-auto w-full px-6 py-8">
         <SignedOut>
           <HeroSection />
         </SignedOut>
 
         <SignedIn>
-          {appState === 'IDLE' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-8"
-            >
-              <div className="text-center max-w-2xl mx-auto">
-                <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
-                  Localize your videos for{' '}
-                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-fuchsia-500 to-purple-500">
-                    Bharat
-                  </span>
-                </h2>
-                <p className="text-lg text-gray-400">
-                  Transform English content into culturally-adapted regional languages
-                </p>
-              </div>
+          <AnimatePresence mode="wait">
+            {appState === 'IDLE' && (
+              <motion.div
+                key="idle"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-8"
+              >
+                <div className="text-center max-w-2xl mx-auto">
+                  <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+                    Localize your videos for{' '}
+                    <span className="neon-text-gradient">Bharat</span>
+                  </h2>
+                  <p className="text-lg text-gray-400">
+                    Transform English content into culturally-adapted regional languages
+                  </p>
+                </div>
 
-              <div className="max-w-xs mx-auto">
-                <label className="block text-sm font-medium text-gray-400 mb-2 text-center">
-                  Target Language
-                </label>
-                <LanguageSelector
-                  languages={languages}
-                  selected={selectedLanguage}
-                  onChange={setSelectedLanguage}
+                <div className="max-w-xs mx-auto">
+                  <label className="block text-sm font-medium text-gray-400 mb-2 text-center">
+                    Target Language
+                  </label>
+                  <LanguageSelector
+                    languages={languages}
+                    selected={selectedLanguage}
+                    onChange={setSelectedLanguage}
+                  />
+                </div>
+
+                <UploadZone
+                  onFileSelect={handleFileSelect}
+                  isUploading={false}
+                  uploadProgress={0}
                 />
-              </div>
 
-              <UploadZone
-                onFileSelect={handleFileSelect}
-                isUploading={false}
-                uploadProgress={0}
-              />
+                {selectedFile && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex justify-center"
+                  >
+                    <GlowButton onClick={handleStartProcessing}>
+                      <Sparkles className="w-5 h-5" />
+                      Start Localization
+                      <ArrowRight className="w-5 h-5" />
+                    </GlowButton>
+                  </motion.div>
+                )}
+              </motion.div>
+            )}
 
-              {selectedFile && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex justify-center"
+            {appState === 'UPLOADING' && (
+              <motion.div key="uploading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <UploadZone onFileSelect={() => { }} isUploading={true} uploadProgress={uploadProgress} />
+              </motion.div>
+            )}
+
+            {appState === 'PROCESSING' && currentJob && (
+              <motion.div key="processing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <ProcessingStatus status={currentJob.status} progress={currentJob.progress} message={currentJob.message} />
+              </motion.div>
+            )}
+
+            {appState === 'COMPLETED' && currentJob && (
+              <motion.div key="completed" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <ResultCard job={currentJob} />
+              </motion.div>
+            )}
+
+            {appState === 'ERROR' && (
+              <motion.div
+                key="error"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="text-center max-w-md mx-auto"
+              >
+                <div
+                  className="rounded-2xl p-8 space-y-4"
+                  style={{
+                    background: 'rgba(255,0,0,0.05)',
+                    border: '1px solid rgba(255,60,60,0.3)',
+                    backdropFilter: 'blur(12px)',
+                  }}
                 >
-                  <GlowButton onClick={handleStartProcessing}>
-                    <Sparkles className="w-5 h-5" />
-                    Start Localization
-                    <ArrowRight className="w-5 h-5" />
-                  </GlowButton>
-                </motion.div>
-              )}
-            </motion.div>
-          )}
-
-          {appState === 'UPLOADING' && (
-            <UploadZone onFileSelect={() => { }} isUploading={true} uploadProgress={uploadProgress} />
-          )}
-
-          {appState === 'PROCESSING' && currentJob && (
-            <ProcessingStatus status={currentJob.status} progress={currentJob.progress} message={currentJob.message} />
-          )}
-
-          {appState === 'COMPLETED' && currentJob && <ResultCard job={currentJob} />}
-
-          {appState === 'ERROR' && (
-            <div className="text-center max-w-md mx-auto">
-              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-red-900/30 border border-red-800 flex items-center justify-center">
-                <span className="text-4xl">😞</span>
-              </div>
-              <h2 className="text-2xl font-bold text-white mb-2">Something went wrong</h2>
-              <p className="text-gray-400 mb-6">{error}</p>
-              <GlowButton onClick={handleReset}>
-                Try Again
-              </GlowButton>
-            </div>
-          )}
+                  <div
+                    className="w-20 h-20 mx-auto rounded-full flex items-center justify-center"
+                    style={{ background: 'rgba(255,60,60,0.1)', border: '1px solid rgba(255,60,60,0.3)' }}
+                  >
+                    <span className="text-4xl">😞</span>
+                  </div>
+                  <h2 className="text-2xl font-bold text-white">Something went wrong</h2>
+                  <p className="text-gray-400">{error}</p>
+                  <GlowButton onClick={handleReset}>Try Again</GlowButton>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </SignedIn>
       </div>
 
-      {/* Footer */}
-      <footer className="border-t border-gray-900 mt-auto">
+      {/* ── Footer ──────────────────────────────────────────────── */}
+      <footer style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} className="mt-auto">
         <div className="max-w-6xl mx-auto px-6 py-8 text-center">
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-600">
             Built with ❤️ for Bharat • Powered by{' '}
-            <span className="text-fuchsia-500">Gemini AI</span> &{' '}
-            <span className="text-purple-500">AWS</span>
+            <span style={{ color: '#00E5FF' }}>Gemini AI</span>{' '}
+            &{' '}
+            <span style={{ color: '#FF00FF' }}>AWS</span>
           </p>
         </div>
       </footer>

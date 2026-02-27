@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Brain, Mic, Film, CheckCircle, Loader2, CloudUpload } from 'lucide-react';
+import { Brain, Mic, Film, CheckCircle, Zap, CloudUpload } from 'lucide-react';
 import { JobStatus } from '@/types';
 
 interface ProcessingStatusProps {
@@ -54,15 +54,45 @@ export default function ProcessingStatus({ status, progress, message }: Processi
 
     return (
         <div className="w-full max-w-2xl mx-auto py-8">
-            {/* Main Progress Bar */}
+
+            {/* ── Pulsing Orb Header ──────────────────────────────── */}
+            <div className="flex flex-col items-center mb-10">
+                <div className="border-spin-wrapper w-24 h-24 rounded-full mb-4">
+                    <div className="border-spin-inner w-full h-full rounded-full flex items-center justify-center"
+                        style={{ background: 'rgba(0,229,255,0.05)' }}
+                    >
+                        <Zap className="w-10 h-10" style={{ color: '#00E5FF' }} />
+                    </div>
+                </div>
+                <motion.p
+                    key={message}
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-lg font-semibold text-white text-center"
+                >
+                    {message || 'Processing…'}
+                </motion.p>
+                <p className="text-sm text-gray-500 mt-1">AI is working on your video</p>
+            </div>
+
+            {/* ── Overall Progress Bar ────────────────────────────── */}
             <div className="mb-8">
                 <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-600">Overall Progress</span>
-                    <span className="text-sm font-bold text-blue-600">{progress}%</span>
+                    <span className="text-sm font-medium text-gray-500">Overall Progress</span>
+                    <span className="text-sm font-bold" style={{ color: '#00E5FF' }}>
+                        {progress}%
+                    </span>
                 </div>
-                <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                    className="w-full h-2 rounded-full overflow-hidden"
+                    style={{ background: 'rgba(255,255,255,0.06)' }}
+                >
                     <motion.div
-                        className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 rounded-full"
+                        className="h-full rounded-full"
+                        style={{
+                            background: 'linear-gradient(90deg, #00E5FF, #FF00FF)',
+                            boxShadow: '0 0 12px rgba(0,229,255,0.5)',
+                        }}
                         initial={{ width: 0 }}
                         animate={{ width: `${progress}%` }}
                         transition={{ duration: 0.5 }}
@@ -70,78 +100,100 @@ export default function ProcessingStatus({ status, progress, message }: Processi
                 </div>
             </div>
 
-            {/* Status Message */}
-            <motion.div
-                key={message}
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-center mb-8"
-            >
-                <p className="text-lg font-medium text-gray-800">{message}</p>
-            </motion.div>
-
-            {/* Stage Steps */}
-            <div className="space-y-4">
+            {/* ── Stage Steps ─────────────────────────────────────── */}
+            <div className="space-y-3">
                 {stages.map((stage, index) => {
                     const state = getStageState(stage);
                     const Icon = stage.icon;
+
+                    const borderStyle =
+                        state === 'active'
+                            ? '1px solid rgba(0,229,255,0.5)'
+                            : state === 'complete'
+                                ? '1px solid rgba(204,255,0,0.35)'
+                                : '1px solid rgba(255,255,255,0.07)';
+
+                    const bgStyle =
+                        state === 'active'
+                            ? 'rgba(0,229,255,0.05)'
+                            : state === 'complete'
+                                ? 'rgba(204,255,0,0.04)'
+                                : 'rgba(255,255,255,0.02)';
+
+                    const iconBg =
+                        state === 'active'
+                            ? 'rgba(0,229,255,0.15)'
+                            : state === 'complete'
+                                ? 'rgba(204,255,0,0.15)'
+                                : 'rgba(255,255,255,0.05)';
+
+                    const iconColor =
+                        state === 'active'
+                            ? '#00E5FF'
+                            : state === 'complete'
+                                ? '#CCFF00'
+                                : '#4b5563';
 
                     return (
                         <motion.div
                             key={stage.id}
                             initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: index * 0.1 }}
-                            className={`
-                flex items-center gap-4 p-4 rounded-xl transition-all duration-300
-                ${state === 'active' ? 'bg-blue-50 border-2 border-blue-200 shadow-md' : ''}
-                ${state === 'complete' ? 'bg-green-50 border border-green-200' : ''}
-                ${state === 'pending' ? 'bg-gray-50 border border-gray-200 opacity-50' : ''}
-              `}
+                            animate={{ opacity: state === 'pending' ? 0.4 : 1, x: 0 }}
+                            transition={{ delay: index * 0.08 }}
+                            className={`flex items-center gap-4 p-4 rounded-xl transition-all duration-300 ${state === 'active' ? 'glow-pulse' : ''}`}
+                            style={{ background: bgStyle, border: borderStyle }}
                         >
                             {/* Icon */}
-                            <div className={`
-                w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0
-                ${state === 'active' ? 'bg-blue-500' : ''}
-                ${state === 'complete' ? 'bg-green-500' : ''}
-                ${state === 'pending' ? 'bg-gray-300' : ''}
-              `}>
+                            <div
+                                className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
+                                style={{ background: iconBg }}
+                            >
                                 {state === 'active' ? (
                                     <motion.div
                                         animate={{ rotate: 360 }}
                                         transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
                                     >
-                                        <Loader2 className="w-6 h-6 text-white" />
+                                        <Icon className="w-6 h-6" style={{ color: iconColor }} />
                                     </motion.div>
                                 ) : state === 'complete' ? (
-                                    <CheckCircle className="w-6 h-6 text-white" />
+                                    <CheckCircle className="w-6 h-6" style={{ color: iconColor }} />
                                 ) : (
-                                    <Icon className="w-6 h-6 text-white" />
+                                    <Icon className="w-6 h-6" style={{ color: iconColor }} />
                                 )}
                             </div>
 
                             {/* Text */}
                             <div className="flex-1">
-                                <h3 className={`font-semibold ${state === 'active' ? 'text-blue-800' : state === 'complete' ? 'text-green-800' : 'text-gray-600'}`}>
+                                <h3 className={`font-semibold ${state === 'pending' ? 'text-gray-600' : 'text-white'}`}>
                                     {stage.label}
                                 </h3>
-                                <p className={`text-sm ${state === 'active' ? 'text-blue-600' : state === 'complete' ? 'text-green-600' : 'text-gray-400'}`}>
-                                    {stage.description}
-                                </p>
+                                <p className="text-sm text-gray-500">{stage.description}</p>
                             </div>
 
-                            {/* Status Badge */}
+                            {/* Badge */}
                             {state === 'active' && (
                                 <motion.div
-                                    className="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded-full"
-                                    animate={{ scale: [1, 1.05, 1] }}
+                                    className="px-3 py-1 text-xs font-bold rounded-full"
+                                    style={{
+                                        background: 'rgba(0,229,255,0.15)',
+                                        border: '1px solid rgba(0,229,255,0.4)',
+                                        color: '#00E5FF',
+                                    }}
+                                    animate={{ opacity: [1, 0.5, 1] }}
                                     transition={{ duration: 1.5, repeat: Infinity }}
                                 >
                                     ACTIVE
                                 </motion.div>
                             )}
                             {state === 'complete' && (
-                                <div className="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded-full">
+                                <div
+                                    className="px-3 py-1 text-xs font-bold rounded-full"
+                                    style={{
+                                        background: 'rgba(204,255,0,0.1)',
+                                        border: '1px solid rgba(204,255,0,0.35)',
+                                        color: '#CCFF00',
+                                    }}
+                                >
                                     DONE
                                 </div>
                             )}
@@ -149,23 +201,6 @@ export default function ProcessingStatus({ status, progress, message }: Processi
                     );
                 })}
             </div>
-
-            {/* Animated Background Effect */}
-            <motion.div
-                className="fixed inset-0 pointer-events-none z-0"
-                style={{
-                    background: 'radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.05) 0%, transparent 50%)',
-                }}
-                animate={{
-                    scale: [1, 1.2, 1],
-                    opacity: [0.5, 0.8, 0.5],
-                }}
-                transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    ease: 'easeInOut',
-                }}
-            />
         </div>
     );
 }
