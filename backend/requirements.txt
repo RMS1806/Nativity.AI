@@ -3,8 +3,9 @@ fastapi
 uvicorn[standard]
 python-multipart
 
-# AI & ML - Gemini 3 SDK
+# AI & ML - Gemini SDK
 google-genai
+google-api-core
 
 # AWS
 boto3
