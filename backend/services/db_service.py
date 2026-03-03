@@ -165,14 +165,13 @@ class DBService:
             return {"error": "DynamoDB not configured"}
         
         # First, find the item by job_id
-        video = self.get_video_by_job_id(user_id, job_id)
-        if "error" in video:
-            return video
-        if not video.get("video"):
+        # get_video_by_job_id returns the raw DynamoDB item dict, or None
+        raw_item = self.get_video_by_job_id(user_id, job_id)
+        if not raw_item:
             return {"error": "Video not found"}
-        
-        pk = video["video"]["PK"]
-        sk = video["video"]["SK"]
+
+        pk = raw_item["PK"]
+        sk = raw_item["SK"]
         
         # Build update expression
         update_expr = "SET draft_segments = :segments, updated_at = :updated"
@@ -209,7 +208,8 @@ class DBService:
         status: str,
         output_url: Optional[str] = None,
         output_s3_key: Optional[str] = None,
-        subtitle_s3_key: Optional[str] = None
+        subtitle_s3_key: Optional[str] = None,
+        approved_segments: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Update the status of a job and optionally set output URL.
@@ -228,14 +228,13 @@ class DBService:
             return {"error": "DynamoDB not configured"}
         
         # Find the item by job_id
-        video = self.get_video_by_job_id(user_id, job_id)
-        if "error" in video:
-            return video
-        if not video.get("video"):
+        # get_video_by_job_id returns the raw DynamoDB item dict, or None
+        raw_item = self.get_video_by_job_id(user_id, job_id)
+        if not raw_item:
             return {"error": "Video not found"}
-        
-        pk = video["video"]["PK"]
-        sk = video["video"]["SK"]
+
+        pk = raw_item["PK"]
+        sk = raw_item["SK"]
         
         # Build update expression
         update_expr = "SET #status = :status, updated_at = :updated"
@@ -254,6 +253,9 @@ class DBService:
         if subtitle_s3_key:
             update_expr += ", subtitle_s3_key = :subtitle_s3_key"
             expr_values[":subtitle_s3_key"] = subtitle_s3_key
+        if approved_segments is not None:
+            update_expr += ", draft_segments = :draft_segments"
+            expr_values[":draft_segments"] = json.dumps(approved_segments)
         
         try:
             self.table.update_item(

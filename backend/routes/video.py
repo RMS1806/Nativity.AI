@@ -451,15 +451,27 @@ async def process_finalize_dubbing(
                 s = seconds % 60
                 return f"{h:02d}:{m:02d}:{s:06.3f}"
 
+            def parse_timestamp(val):
+                """Convert MM:SS or HH:MM:SS strings OR numeric values to float seconds."""
+                if isinstance(val, (int, float)):
+                    return float(val)
+                parts = str(val).strip().split(":")
+                parts = [float(p) for p in parts]
+                if len(parts) == 2:   # MM:SS
+                    return parts[0] * 60 + parts[1]
+                if len(parts) == 3:   # HH:MM:SS
+                    return parts[0] * 3600 + parts[1] * 60 + parts[2]
+                return 0.0
+
             vtt_lines = ["WEBVTT", ""]
             for idx, seg in enumerate(approved_segments):
-                start_sec = seg.get("start", 0)
-                end_sec   = seg.get("end",   0)
+                start_sec = parse_timestamp(seg.get("start", 0))
+                end_sec   = parse_timestamp(seg.get("end",   0))
                 text      = seg.get("translated_text", "").strip()
                 if not text:
                     continue
                 vtt_lines.append(str(idx + 1))
-                vtt_lines.append(f"{format_vtt_time(float(start_sec))} --> {format_vtt_time(float(end_sec))}")
+                vtt_lines.append(f"{format_vtt_time(start_sec)} --> {format_vtt_time(end_sec)}")
                 vtt_lines.append(text)
                 vtt_lines.append("")
 
@@ -481,7 +493,8 @@ async def process_finalize_dubbing(
                 status="complete",
                 output_url=download_result.get("download_url"),
                 output_s3_key=output_key,  # store raw key so /history can regenerate fresh URLs
-                subtitle_s3_key=subtitle_s3_key
+                subtitle_s3_key=subtitle_s3_key,
+                approved_segments=approved_segments  # persist translated text for metadata generation
             )
         
     except Exception as e:
@@ -745,6 +758,7 @@ async def process_localization_job(
                 file_size_mb=stitch_result.file_size_mb,
                 cultural_report=cultural_report,
                 segments_count=len(segments),
+                draft_segments=segments,  # persist translated text for metadata generation
                 subtitle_s3_key=subtitle_s3_key,
                 words_localized=words_localized
             )
@@ -799,64 +813,103 @@ async def generate_video_metadata(
     user: dict = Depends(get_current_user)
 ):
     """
-    Generate YouTube SEO metadata for a completed localization job
-    Uses Gemini AI to create optimized title, description, and tags
-    
+    Generate YouTube SEO metadata for a completed localization job.
+    Uses Gemini AI with the actual video transcript to create optimized
+    title, description, and tags grounded in real video content.
+
     Request body: { "job_id": "..." }
     """
     job_id = request.get("job_id")
     if not job_id:
         raise HTTPException(status_code=400, detail="job_id is required")
-    
-    # Check if job exists and is complete
+
+    user_id = user.get("sub")
+    print(f"\n{'='*60}")
+    print(f"[METADATA] Request: job_id={job_id}, user_id={user_id}")
+
+    # ── Step 1: Resolve target_language and translated_text ──────────────────
+    translated_text = None
+    target_language = "hindi"
+
+    # Path A: in-memory job_results (freshly processed job, same server session)
+    print(f"[METADATA] Checking in-memory job_results... key present: {job_id in job_results}")
+    if job_id in job_results:
+        result_data = job_results[job_id]
+        segments = result_data.get("segments") or []
+        target_language = result_data.get("target_language", "hindi")
+        print(f"[METADATA] In-memory: found {len(segments)} segments, lang={target_language}")
+        if segments:
+            translated_text = " ".join(
+                seg.get("translated_text", "") for seg in segments
+            ).strip()
+            print(f"[METADATA] In-memory translated_text length: {len(translated_text)}")
+
+    # Path B: DynamoDB fallback
+    if not translated_text:
+        print(f"[METADATA] No translated_text from memory. Querying DynamoDB...")
+        if not user_id:
+            print("[METADATA] ERROR: user_id is None — cannot query DynamoDB")
+        else:
+            import json as _json
+            raw_item = db_service.get_video_by_job_id(user_id, job_id)
+            print(f"[METADATA] DynamoDB item found: {raw_item is not None}")
+            if raw_item:
+                target_language = raw_item.get("target_language", "hindi")
+                raw_segments_json = raw_item.get("draft_segments")
+                print(f"[METADATA] target_language={target_language}")
+                print(f"[METADATA] draft_segments present: {raw_segments_json is not None}")
+                if raw_segments_json:
+                    try:
+                        db_segments = _json.loads(raw_segments_json)
+                        print(f"[METADATA] Parsed {len(db_segments)} segments from DynamoDB")
+                        if db_segments:
+                            # Log first segment keys so we can see the structure
+                            print(f"[METADATA] First segment keys: {list(db_segments[0].keys())}")
+                            print(f"[METADATA] First segment translated_text: {repr(db_segments[0].get('translated_text', 'KEY MISSING'))[:120]}")
+                        translated_text = " ".join(
+                            seg.get("translated_text", "") for seg in db_segments
+                        ).strip()
+                        print(f"[METADATA] Extracted translated_text length: {len(translated_text)}")
+                    except Exception as parse_err:
+                        print(f"[METADATA] ERROR parsing draft_segments JSON: {parse_err}")
+                        translated_text = None
+                else:
+                    print("[METADATA] draft_segments field is empty/null in DynamoDB item")
+            else:
+                print("[METADATA] DynamoDB returned no item for this job_id")
+
+    # ── Step 2: Guard – transcript must exist ────────────────────────────────
+    print(f"[METADATA] Final translated_text: {'FOUND (len=' + str(len(translated_text)) + ')' if translated_text else 'MISSING — will 400'}")
+    if not translated_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Transcript not available for this video. Please ensure the job has been finalized."
+        )
+
+    # ── Step 3: Validate job status (only for in-memory jobs) ────────────────
     job = jobs.get(job_id)
-    if not job:
-        # Try to fetch from DB if not in memory
-        user_id = user.get("sub")
-        if user_id:
-            history = db_service.get_user_history(user_id, limit=100)
-            videos = history.get("videos", [])
-            job_data = next((v for v in videos if v.get("job_id") == job_id), None)
-            if job_data:
-                # Generate metadata from DB data
-                video_title = job_data.get("input_file", "").split("/")[-1].replace(".mp4", "").replace("_", " ").title()
-                target_language = job_data.get("target_language", "hindi")
-                
-                if not gemini_service.is_configured():
-                    raise HTTPException(status_code=503, detail="Gemini API not configured")
-                
-                metadata = await gemini_service.generate_metadata(
-                    video_title=video_title,
-                    target_language=target_language
-                )
-                
-                if "error" in metadata:
-                    raise HTTPException(status_code=500, detail=metadata["error"])
-                
-                return metadata
-        
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    if job.status != JobStatus.COMPLETE:
+    if job and job.status != JobStatus.COMPLETE:
         raise HTTPException(status_code=400, detail="Job is not yet complete")
-    
-    # Get job details for metadata generation
-    video_title = job.input_file.split("/")[-1].replace(".mp4", "").replace("_", " ").title() if job.input_file else "Localized Video"
-    target_language = job.target_language or "hindi"
-    
+
     if not gemini_service.is_configured():
         raise HTTPException(status_code=503, detail="Gemini API not configured")
-    
-    # Generate metadata
+
+    # ── Step 4: Generate transcript-grounded metadata ────────────────────────
+    print(f"[METADATA] Calling Gemini generate_metadata with lang={target_language}")
     metadata = await gemini_service.generate_metadata(
-        video_title=video_title,
+        translated_text=translated_text,
         target_language=target_language
     )
-    
+
+    print(f"[METADATA] Gemini returned keys: {list(metadata.keys())}")
     if "error" in metadata:
+        print(f"[METADATA] Gemini returned error: {metadata['error']}")
         raise HTTPException(status_code=500, detail=metadata["error"])
-    
+
+    print(f"[METADATA] Success — title={repr(str(metadata.get('title',''))[:60])}")
+    print(f"{'='*60}\n")
     return metadata
+
 
 
 @router.post("/upload-direct")

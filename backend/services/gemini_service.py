@@ -11,14 +11,16 @@ from pathlib import Path
 from typing import Optional
 from google import genai
 from google.genai import types
+from google.api_core.exceptions import GoogleAPIError
 from config import settings
 
-# Stubborn retry configuration for large video processing
-MAX_RETRIES = 10
-INITIAL_RETRY_DELAY_SECONDS = 5  # Doubles with each attempt (exponential backoff)
+# Retry / timeout configuration
+MAX_RETRIES = 3                    # Max attempts before giving up
+INITIAL_RETRY_DELAY_SECONDS = 5   # Doubles with each attempt (5s → 10s → 20s)
+API_TIMEOUT_SECONDS = 60           # Hard timeout per API call
 
-# Model selection - Gemini 3 Flash Preview
-MODEL_NAME = "gemini-3-flash-preview"
+# Model selection - Gemini 2.0 Flash (stable GA, high availability)
+MODEL_NAME = "gemini-2.5-flash"
 
 
 class GeminiService:
@@ -36,8 +38,11 @@ class GeminiService:
     def _configure(self):
         """Configure the Gemini API client using new SDK"""
         if self.api_key:
-            self.client = genai.Client(api_key=self.api_key)
-            print(f"✅ Gemini client initialized with model: {MODEL_NAME}")
+            self.client = genai.Client(
+                api_key=self.api_key,
+                http_options=types.HttpOptions(timeout=API_TIMEOUT_SECONDS * 1000),  # ms
+            )
+            print(f"✅ Gemini client initialized with model: {MODEL_NAME} (timeout={API_TIMEOUT_SECONDS}s)")
         else:
             print("⚠️ GOOGLE_API_KEY not found - Gemini client not initialized")
             self.client = None
@@ -88,7 +93,8 @@ class GeminiService:
         # The magic prompt for cultural transcreation
         prompt = self._build_analysis_prompt(target_language)
         
-        # Generate analysis with video context (stubborn retry loop for large videos)
+        # Generate analysis with video context (retry loop with backoff)
+        print(f"Sending payload of length: {len(prompt)} (+ video file)")
         response = None
         for attempt in range(MAX_RETRIES):
             try:
@@ -102,18 +108,29 @@ class GeminiService:
                 )
                 print("✅ Analysis complete")
                 break  # Success, exit retry loop
+            except TimeoutError as e:
+                print(f"⏱️ Timeout on attempt {attempt + 1}: {e}")
+                if attempt == MAX_RETRIES - 1:
+                    return {"status": "failed", "reason": "LLM API Timeout - Please try a shorter video or try again later."}
+                time.sleep(INITIAL_RETRY_DELAY_SECONDS * (2 ** attempt))
             except Exception as e:
                 error_str = str(e).lower()
-                # Catch ResourceExhausted and ServiceUnavailable
-                if any(err in error_str for err in ["resourceexhausted", "429", "quota", "503", "serviceunavailable", "overloaded"]):
-                    delay = INITIAL_RETRY_DELAY_SECONDS * (2 ** attempt)  # Exponential backoff: 5s, 10s, 20s, 40s...
-                    print(f"⚠️ Gemini is busy. Retrying in {delay} seconds... (Attempt {attempt + 1}/{MAX_RETRIES})")
+                print(f"❌ Gemini error on attempt {attempt + 1}: {e}")
+                if any(err in error_str for err in ["resourceexhausted", "429", "quota"]):
+                    if attempt == MAX_RETRIES - 1:
+                        return {"status": "failed", "reason": "LLM API Quota Exceeded. Please try again soon."}
+                    delay = INITIAL_RETRY_DELAY_SECONDS * (2 ** attempt)
+                    print(f"⚠️ Quota hit. Retrying in {delay}s...")
+                    time.sleep(delay)
+                elif any(err in error_str for err in ["503", "serviceunavailable", "overloaded"]):
+                    delay = INITIAL_RETRY_DELAY_SECONDS * (2 ** attempt)
+                    print(f"⚠️ Service unavailable. Retrying in {delay}s...")
                     if attempt < MAX_RETRIES - 1:
                         time.sleep(delay)
                     else:
-                        return {"error": "API quota exceeded after multiple retries. Please wait and try again."}
+                        return {"status": "failed", "reason": "LLM service temporarily unavailable. Please try again later."}
                 else:
-                    raise e  # Re-raise other errors
+                    raise e  # Re-raise unexpected errors immediately
         
         if response is None:
             return {"error": "Failed to get response from Gemini API"}
@@ -294,7 +311,8 @@ Return JSON:
   "adaptation_note": "<explanation if adapted>"
 }}'''
 
-        # Stubborn retry logic with exponential backoff
+        # Retry logic with exponential backoff
+        print(f"Sending payload of length: {len(prompt)}")
         response = None
         for attempt in range(MAX_RETRIES):
             try:
@@ -305,19 +323,29 @@ Return JSON:
                         response_mime_type="application/json"
                     )
                 )
-                break  # Success, exit retry loop
+                break
+            except TimeoutError as e:
+                print(f"⏱️ Timeout on attempt {attempt + 1}: {e}")
+                if attempt == MAX_RETRIES - 1:
+                    return {"status": "failed", "reason": "LLM API Timeout - Please try a shorter video or try again later."}
+                time.sleep(INITIAL_RETRY_DELAY_SECONDS * (2 ** attempt))
             except Exception as e:
                 error_str = str(e).lower()
-                # Catch ResourceExhausted and ServiceUnavailable
-                if any(err in error_str for err in ["resourceexhausted", "429", "quota", "503", "serviceunavailable", "overloaded"]):
+                print(f"❌ Gemini error on attempt {attempt + 1}: {e}")
+                if any(err in error_str for err in ["resourceexhausted", "429", "quota"]):
+                    if attempt == MAX_RETRIES - 1:
+                        return {"status": "failed", "reason": "LLM API Quota Exceeded. Please try again soon."}
                     delay = INITIAL_RETRY_DELAY_SECONDS * (2 ** attempt)
-                    print(f"⚠️ Gemini is busy. Retrying in {delay} seconds... (Attempt {attempt + 1}/{MAX_RETRIES})")
+                    print(f"⚠️ Quota hit. Retrying in {delay}s...")
+                    time.sleep(delay)
+                elif any(err in error_str for err in ["503", "serviceunavailable", "overloaded"]):
+                    delay = INITIAL_RETRY_DELAY_SECONDS * (2 ** attempt)
                     if attempt < MAX_RETRIES - 1:
                         time.sleep(delay)
                     else:
-                        return {"error": "API quota exceeded after multiple retries. Please wait and try again."}
+                        return {"status": "failed", "reason": "LLM service temporarily unavailable. Please try again later."}
                 else:
-                    raise e  # Re-raise other errors
+                    raise e
         
         if response is None:
             return {"error": "Failed to get response from Gemini API"}
@@ -329,17 +357,15 @@ Return JSON:
 
     async def generate_metadata(
         self,
-        video_title: str,
+        translated_text: str,
         target_language: str,
-        original_description: str = ""
     ) -> dict:
         """
-        Generate SEO-optimized YouTube metadata for localized videos
+        Generate SEO-optimized YouTube metadata for localized videos.
         
         Args:
-            video_title: Original video title
+            translated_text: The full translated transcript of the video
             target_language: Language the video was localized to
-            original_description: Optional original description for context
         
         Returns:
             dict with title, description, and tags for YouTube
@@ -357,36 +383,32 @@ Return JSON:
         
         target_lang_display = language_map.get(target_language, target_language)
         
-        prompt = f'''You are a YouTube SEO expert specializing in Indian language content.
+        prompt = f"""
+You are an expert YouTube SEO strategist. I will provide you with the exact spoken transcript of a video that has been localized into {target_lang_display}. 
 
-Generate optimized YouTube metadata for a video that has been localized to {target_lang_display}.
+Your job is to generate highly engaging, click-optimized YouTube metadata strictly based on the content of this transcript. The output MUST be entirely in {target_lang_display}.
 
-Original Video Title: "{video_title}"
-{f'Original Description: "{original_description}"' if original_description else ''}
+Video Transcript:
+"{translated_text}"
 
-Create SEO-optimized metadata in {target_lang_display} that will maximize discoverability for Indian audiences.
-
-Return JSON in this exact format:
+You MUST respond ONLY with a raw, valid JSON object using exactly these keys. Do not include markdown blocks or introductory text.
 {{
-  "title": "<SEO-optimized title in {target_lang_display}, max 100 chars, include key terms>",
-  "description": "<Engaging description in {target_lang_display}, 200-500 chars, include relevant keywords, call-to-action>",
-  "tags": ["<15-20 relevant tags in {target_lang_display} and English mix for maximum reach>"]
+    "title": "A catchy, high-CTR YouTube title (under 70 characters)",
+    "description": "A 2-3 paragraph YouTube description summarizing the video value, naturally including SEO keywords",
+    "tags": ["tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9", "tag10"]
 }}
+"""
 
-GUIDELINES:
-1. Title should be catchy and include the primary keyword
-2. Description should have a hook in the first line (visible in search results)
-3. Include both {target_lang_display} and English tags for broader discoverability
-4. Tags should include: language name, topic keywords, related terms, trending phrases
-5. Add relevant hashtags potential in the description
-6. Keep cultural context in mind for the Indian audience
+        # Retry logic – while loop with linear backoff, max 2 attempts
+        print(f"Sending payload of length: {len(prompt)}")
+        attempt = 0
+        max_retries = 2
 
-Return ONLY valid JSON, no additional text.'''
-
-        # Stubborn retry logic with exponential backoff
-        response = None
-        for attempt in range(MAX_RETRIES):
+        while attempt < max_retries:
             try:
+                attempt += 1
+                print(f"🧠 Generating YouTube metadata (attempt {attempt}/{max_retries})...")
+
                 response = self.client.models.generate_content(
                     model=MODEL_NAME,
                     contents=prompt,
@@ -394,29 +416,53 @@ Return ONLY valid JSON, no additional text.'''
                         response_mime_type="application/json"
                     )
                 )
-                break
-            except Exception as e:
-                error_str = str(e).lower()
-                # Catch ResourceExhausted and ServiceUnavailable
-                if any(err in error_str for err in ["resourceexhausted", "429", "quota", "503", "serviceunavailable", "overloaded"]):
-                    delay = INITIAL_RETRY_DELAY_SECONDS * (2 ** attempt)
-                    print(f"⚠️ Gemini is busy. Retrying in {delay} seconds... (Attempt {attempt + 1}/{MAX_RETRIES})")
-                    if attempt < MAX_RETRIES - 1:
-                        time.sleep(delay)
-                    else:
-                        return {"error": "API quota exceeded after multiple retries. Please wait and try again."}
+
+                # Parse and return
+                raw_text = response.text.strip()
+                if raw_text.startswith("```"):
+                    raw_text = raw_text.split("\n", 1)[-1]
+                    if raw_text.endswith("```"):
+                        raw_text = raw_text[: raw_text.rfind("```")].strip()
+                result = json.loads(raw_text)
+                result["language"] = target_language
+                return result
+
+            except json.JSONDecodeError as e:
+                print(f"❌ JSON parse error: {e}")
+                return {
+                    "title": "Format Error - Could not parse response",
+                    "description": "The AI returned an invalid format. Please try again.",
+                    "tags": ["error"],
+                    "language": target_language,
+                }
+
+            except GoogleAPIError as e:
+                print(f"❌ Gemini API Error on attempt {attempt}: {e}")
+                if attempt < max_retries:
+                    sleep_time = 5 * attempt
+                    print(f"⚠️ Service unavailable. Retrying in {sleep_time}s...")
+                    time.sleep(sleep_time)
                 else:
-                    raise e
-        
-        if response is None:
-            return {"error": "Failed to get response from Gemini API"}
-        
-        try:
-            result = json.loads(response.text)
-            result["language"] = target_language
-            return result
-        except json.JSONDecodeError:
-            return {"error": "Parse error", "raw": response.text}
+                    print("🚨 Max retries reached.")
+                    return {
+                        "title": "API Overloaded - Please try again later",
+                        "description": "The AI service is currently busy.",
+                        "tags": ["error"],
+                        "language": target_language,
+                    }
+
+            except Exception as e:
+                print(f"❌ Unexpected Error: {e}")
+                return {
+                    "title": "System Error",
+                    "description": "An unexpected error occurred.",
+                    "tags": ["error"],
+                    "language": target_language,
+                }
+
+        # Should not reach here, but guard anyway
+        return {"error": "Failed to get response from Gemini API"}
+
 
 
 # Singleton instance
