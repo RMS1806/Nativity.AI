@@ -60,13 +60,7 @@ cp .env.example .env
 
 ---
 
-## 🏆 Hackathon Tracks
-
-- **AI for Bharat**: Problem Statement 02 (Media, Content & Digital Experiences)
-- **Gemini 3**: Agentic & Multimodal Track
-
----
 
 ## 📄 License
 
-MIT License - Built with ❤️ for Bharat
+MIT License 
