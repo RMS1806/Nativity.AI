@@ -74,11 +74,7 @@ export default function VideoPreviewModal({
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.2 }}
                     className="fixed inset-0 z-50 flex items-center justify-center p-4"
-                    style={{
-                        background: 'rgba(0,0,0,0.9)',
-                        backdropFilter: 'blur(16px)',
-                        WebkitBackdropFilter: 'blur(16px)',
-                    }}
+                    style={{ background: 'rgba(0,0,0,0.8)' }}
                     onClick={onClose}
                 >
                     {/* ── Modal container ──────────────────────────── */}
@@ -88,32 +84,24 @@ export default function VideoPreviewModal({
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.85, y: 30 }}
                         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                        className="relative w-full max-w-4xl rounded-2xl overflow-hidden"
-                        style={{
-                            background: 'rgba(8,8,18,0.97)',
-                            border: '1px solid rgba(255,255,255,0.10)',
-                            boxShadow: '0 0 60px rgba(0,229,255,0.08), 0 0 120px rgba(255,0,255,0.04)',
-                        }}
+                        className="relative w-full max-w-4xl bg-white neo-border neo-shadow-lg"
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* ── Header ───────────────────────────────── */}
                         <div
-                            className="flex items-center justify-between px-5 py-4"
-                            style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+                            className="flex items-center justify-between px-5 py-4 bg-[#f4ede5]"
+                            style={{ borderBottom: '3px solid #1A1A1A' }}
                         >
                             {/* Left: file name + badge */}
                             <div className="flex items-center gap-3 min-w-0">
                                 <div
-                                    className="p-2 rounded-lg flex-shrink-0"
-                                    style={{
-                                        background: 'rgba(0,229,255,0.08)',
-                                        border: '1px solid rgba(0,229,255,0.2)',
-                                    }}
+                                    className="p-2 flex-shrink-0 bg-white neo-border"
+                                    style={{ boxShadow: '2px 2px 0px 0px #1A1A1A' }}
                                 >
-                                    <Play className="w-4 h-4" style={{ color: '#00E5FF' }} />
+                                    <Play className="w-4 h-4 text-[#ba061b]" />
                                 </div>
                                 <span
-                                    className="font-semibold text-white truncate max-w-[260px] text-sm"
+                                    className="font-bold text-[#1A1A1A] font-headline truncate max-w-[260px] text-lg"
                                     title={fileName}
                                 >
                                     {fileName}
@@ -122,53 +110,19 @@ export default function VideoPreviewModal({
 
                             {/* Centre: Original / Localized toggle */}
                             {hasOriginal && (
-                                <div className="flex items-center gap-3 mx-4">
-                                    {/* Localized label */}
-                                    <span
-                                        className="text-xs font-bold uppercase tracking-widest transition-colors"
-                                        style={{
-                                            color: !showOriginal ? '#CCFF00' : 'rgba(255,255,255,0.3)',
-                                        }}
+                                <div className="flex items-center gap-3 mx-4 bg-white neo-border p-1" style={{ boxShadow: '2px 2px 0px 0px #1A1A1A' }}>
+                                    <button
+                                        onClick={() => showOriginal && handleToggle()}
+                                        className={`px-3 py-1 font-mono-label text-xs font-bold uppercase transition-colors ${!showOriginal ? 'bg-[#BFFF00] neo-border text-[#1A1A1A]' : 'text-[#5c403d] hover:text-[#1A1A1A]'}`}
                                     >
                                         Localized
-                                    </span>
-
-                                    {/* Toggle pill */}
-                                    <motion.button
-                                        onClick={handleToggle}
-                                        className="relative w-14 h-7 rounded-full p-1 cursor-pointer flex-shrink-0"
-                                        style={{
-                                            background: 'rgba(255,255,255,0.07)',
-                                            border: '1px solid rgba(255,255,255,0.12)',
-                                        }}
-                                        whileTap={{ scale: 0.95 }}
-                                        aria-label="Toggle between Localized and Original video"
-                                    >
-                                        <motion.div
-                                            className="w-5 h-5 rounded-full shadow-lg"
-                                            style={{
-                                                background: showOriginal
-                                                    ? 'linear-gradient(135deg, #00E5FF, #FF00FF)'
-                                                    : 'linear-gradient(135deg, #CCFF00, #00E5FF)',
-                                            }}
-                                            animate={{ x: showOriginal ? 26 : 0 }}
-                                            transition={{
-                                                type: 'spring',
-                                                stiffness: 500,
-                                                damping: 30,
-                                            }}
-                                        />
-                                    </motion.button>
-
-                                    {/* Original label */}
-                                    <span
-                                        className="text-xs font-bold uppercase tracking-widest transition-colors"
-                                        style={{
-                                            color: showOriginal ? '#00E5FF' : 'rgba(255,255,255,0.3)',
-                                        }}
+                                    </button>
+                                    <button
+                                        onClick={() => !showOriginal && handleToggle()}
+                                        className={`px-3 py-1 font-mono-label text-xs font-bold uppercase transition-colors ${showOriginal ? 'bg-[#FF2D78] neo-border text-white' : 'text-[#5c403d] hover:text-[#1A1A1A]'}`}
                                     >
                                         Original
-                                    </span>
+                                    </button>
                                 </div>
                             )}
 
@@ -177,12 +131,8 @@ export default function VideoPreviewModal({
                                 onClick={onClose}
                                 whileHover={{ scale: 1.1, rotate: 90 }}
                                 whileTap={{ scale: 0.9 }}
-                                className="p-2 rounded-lg transition-colors flex-shrink-0"
-                                style={{
-                                    background: 'rgba(255,255,255,0.05)',
-                                    border: '1px solid rgba(255,255,255,0.08)',
-                                    color: '#6b7280',
-                                }}
+                                className="p-2 bg-white neo-border text-[#1A1A1A] transition-colors flex-shrink-0"
+                                style={{ boxShadow: '2px 2px 0px 0px #1A1A1A' }}
                                 title="Close"
                                 aria-label="Close video player"
                             >
@@ -191,7 +141,7 @@ export default function VideoPreviewModal({
                         </div>
 
                         {/* ── Video Player Area ─────────────────────── */}
-                        <div className="relative bg-black aspect-video">
+                        <div className="relative bg-black aspect-video border-b-4 border-[#1A1A1A]">
                             {/* Version badge */}
                             <AnimatePresence mode="wait">
                                 <motion.div
@@ -200,25 +150,17 @@ export default function VideoPreviewModal({
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -8 }}
                                     transition={{ duration: 0.15 }}
-                                    className="absolute top-3 left-3 z-10"
+                                    className="absolute top-4 left-4 z-10"
                                 >
                                     <span
-                                        className="px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-sm"
+                                        className="px-4 py-2 font-mono-label text-xs font-bold uppercase neo-border"
                                         style={
                                             showOriginal
-                                                ? {
-                                                    background: 'rgba(0,229,255,0.12)',
-                                                    border: '1px solid rgba(0,229,255,0.3)',
-                                                    color: '#00E5FF',
-                                                }
-                                                : {
-                                                    background: 'rgba(204,255,0,0.12)',
-                                                    border: '1px solid rgba(204,255,0,0.35)',
-                                                    color: '#CCFF00',
-                                                }
+                                                ? { background: '#FF2D78', color: 'white', boxShadow: '2px 2px 0px 0px #1A1A1A' }
+                                                : { background: '#BFFF00', color: '#1A1A1A', boxShadow: '2px 2px 0px 0px #1A1A1A' }
                                         }
                                     >
-                                        {showOriginal ? '🎬 Original Audio' : '✨ AI Localized'}
+                                        {showOriginal ? 'Original Audio' : 'AI Localized'}
                                     </span>
                                 </motion.div>
                             </AnimatePresence>
@@ -248,11 +190,10 @@ export default function VideoPreviewModal({
 
                         {/* ── Footer ───────────────────────────────── */}
                         <div
-                            className="flex items-center justify-between px-5 py-3"
-                            style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+                            className="flex items-center justify-between px-5 py-4 bg-white"
                         >
-                            <div className="flex items-center gap-2 text-xs text-gray-500">
-                                <Volume2 className="w-4 h-4" />
+                            <div className="flex items-center gap-2 font-mono-label text-sm text-[#5c403d] font-bold">
+                                <Volume2 className="w-5 h-5" />
                                 <span>
                                     {showOriginal
                                         ? 'Playing original audio'
@@ -264,19 +205,12 @@ export default function VideoPreviewModal({
                                 href={currentUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                whileHover={{
-                                    scale: 1.05,
-                                    boxShadow: '0 0 25px rgba(0,229,255,0.35)',
-                                }}
-                                whileTap={{ scale: 0.95 }}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all"
-                                style={{
-                                    background: 'rgba(0,229,255,0.1)',
-                                    border: '1px solid rgba(0,229,255,0.3)',
-                                    color: '#00E5FF',
-                                }}
+                                whileHover={{ y: -2, x: -2 }}
+                                whileTap={{ y: 2, x: 2 }}
+                                className="inline-flex items-center gap-2 px-6 py-3 font-mono-label font-bold uppercase text-white bg-[#0058be] neo-border transition-all"
+                                style={{ boxShadow: '4px 4px 0px 0px #1A1A1A' }}
                             >
-                                <Download className="w-3.5 h-3.5" />
+                                <Download className="w-4 h-4" />
                                 Download {showOriginal ? 'Original' : 'Localized'}
                             </motion.a>
                         </div>

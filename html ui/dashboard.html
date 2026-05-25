@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Dashboard - Nativity.ai</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&amp;family=Space+Grotesk:wght@500;700&amp;family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#1e1b17",
+                        "tertiary-fixed": "#d8e2ff",
+                        "surface-bright": "#fff8f1",
+                        "tertiary-fixed-dim": "#adc6ff",
+                        "inverse-on-surface": "#f7f0e8",
+                        "secondary-container": "#9c48ea",
+                        "on-primary": "#ffffff",
+                        "secondary": "#8127cf",
+                        "on-error-container": "#93000a",
+                        "primary": "#ba061b",
+                        "inverse-surface": "#33302b",
+                        "on-background": "#1e1b17",
+                        "success-lime": "#BFFF00",
+                        "on-secondary": "#ffffff",
+                        "surface-tint": "#be0b1d",
+                        "primary-fixed-dim": "#ffb3ad",
+                        "surface-container-highest": "#e8e1da",
+                        "surface-container-high": "#eee7df",
+                        "on-tertiary-fixed": "#001a42",
+                        "on-tertiary": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "surface-container-low": "#f9f3eb",
+                        "on-error": "#ffffff",
+                        "inverse-primary": "#ffb3ad",
+                        "error": "#ba1a1a",
+                        "surface-dim": "#dfd9d1",
+                        "surface": "#fff8f1",
+                        "on-surface-variant": "#5c403d",
+                        "secondary-fixed-dim": "#ddb7ff",
+                        "surface-white": "#FFFFFF",
+                        "secondary-fixed": "#f0dbff",
+                        "surface-variant": "#e8e1da",
+                        "border-ink": "#1A1A1A",
+                        "primary-container": "#df2b31",
+                        "outline": "#906f6c",
+                        "on-secondary-fixed-variant": "#6900b3",
+                        "on-secondary-container": "#fffbff",
+                        "outline-variant": "#e5bdb9",
+                        "primary-fixed": "#ffdad7",
+                        "on-primary-container": "#fffbff",
+                        "on-tertiary-container": "#fefcff",
+                        "on-primary-fixed-variant": "#930012",
+                        "tertiary": "#0058be",
+                        "danger-pink": "#FF2D78",
+                        "warning-mango": "#FBBF24",
+                        "on-secondary-fixed": "#2c0051",
+                        "background": "#fff8f1",
+                        "on-tertiary-fixed-variant": "#004395",
+                        "surface-container": "#f4ede5",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-fixed": "#410004",
+                        "tertiary-container": "#2170e4",
+                        "surface-alt-lavender": "#F3EDFF"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "8px",
+                        "border-width": "3px",
+                        "margin-desktop": "40px",
+                        "gutter": "24px",
+                        "margin-mobile": "16px",
+                        "shadow-offset": "4px"
+                    },
+                    "fontFamily": {
+                        "label-mono": ["Space Mono"],
+                        "headline-lg": ["Space Grotesk"],
+                        "body-lg": ["Inter"],
+                        "headline-xl": ["Space Grotesk"],
+                        "headline-sm": ["Space Grotesk"],
+                        "headline-lg-mobile": ["Space Grotesk"],
+                        "headline-md": ["Space Grotesk"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-mono": ["14px", { "lineHeight": "1.2", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "headline-lg": ["48px", { "lineHeight": "1.1", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-xl": ["64px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-sm": ["24px", { "lineHeight": "1.2", "fontWeight": "700" }],
+                        "headline-lg-mobile": ["36px", { "lineHeight": "1.1", "fontWeight": "700" }],
+                        "headline-md": ["32px", { "lineHeight": "1.2", "fontWeight": "700" }],
+                        "body-md": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-background text-on-surface font-body-md min-h-screen flex flex-col md:flex-row">
+    <!-- Mobile TopNav (from JSON) -->
+    <nav
+        class="md:hidden flex justify-between items-center px-margin-mobile h-20 bg-surface-white border-b-border-width border-border-ink sticky top-0 z-50">
+        <div class="text-headline-sm font-headline-sm font-bold text-on-surface">Nativity.ai</div>
+        <button
+            class="w-10 h-10 flex items-center justify-center border-border-width border-border-ink bg-surface-bright rounded shadow-[2px_2px_0px_0px_#1A1A1A]">
+            <span class="material-symbols-outlined" data-icon="menu">menu</span>
+        </button>
+    </nav>
+    <!-- SideNavBar (from JSON) - Desktop Only -->
+    <aside
+        class="hidden lg:flex flex-col fixed left-0 top-0 h-full p-base space-y-4 docked left-0 h-full w-64 border-r-3 border-border-ink bg-surface-white z-40 border-r-border-width border-border-ink">
+        <div class="mb-gutter mt-base px-2">
+            <h1 class="text-headline-sm font-headline-sm font-bold text-on-surface">Creator Studio</h1>
+            <p class="font-label-mono text-label-mono text-on-surface-variant mt-1">Localization Hub</p>
+        </div>
+        <nav class="flex-1 space-y-2">
+            <a class="flex items-center gap-3 px-4 py-3 rounded font-label-mono text-label-mono bg-secondary-container text-on-secondary-container border-border-width border-border-ink shadow-[4px_4px_0px_0px_#1A1A1A] scale-95 transition-all"
+                href="#">
+                <span class="material-symbols-outlined" data-icon="home">home</span>
+                Home
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 rounded font-label-mono text-label-mono text-on-surface hover:bg-surface-container-high hover:translate-x-1 transition-transform"
+                href="#">
+                <span class="material-symbols-outlined" data-icon="video_library">video_library</span>
+                Projects
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 rounded font-label-mono text-label-mono text-on-surface hover:bg-surface-container-high hover:translate-x-1 transition-transform"
+                href="#">
+                <span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+                Reports
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 rounded font-label-mono text-label-mono text-on-surface hover:bg-surface-container-high hover:translate-x-1 transition-transform"
+                href="#">
+                <span class="material-symbols-outlined" data-icon="settings">settings</span>
+                Settings
+            </a>
+        </nav>
+        <div class="mt-auto space-y-2 pt-4 border-t-border-width border-border-ink">
+            <button
+                class="w-full flex justify-center items-center gap-2 py-3 bg-primary text-on-primary font-label-mono text-label-mono border-border-width border-border-ink rounded shadow-[4px_4px_0px_0px_#1A1A1A] hover:-translate-y-[2px] hover:-translate-x-[2px] hover:shadow-[6px_6px_0px_0px_#1A1A1A] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all">
+                <span class="material-symbols-outlined text-xl" data-icon="add">add</span>
+                New Project
+            </button>
+            <div class="flex flex-col gap-1 mt-4">
+                <a class="flex items-center gap-3 px-4 py-2 rounded font-label-mono text-label-mono text-on-surface hover:bg-surface-container-high transition-colors"
+                    href="#">
+                    <span class="material-symbols-outlined text-lg" data-icon="help">help</span>
+                    Help
+                </a>
+                <a class="flex items-center gap-3 px-4 py-2 rounded font-label-mono text-label-mono text-on-surface hover:bg-surface-container-high transition-colors"
+                    href="#">
+                    <span class="material-symbols-outlined text-lg" data-icon="logout">logout</span>
+                    Logout
+                </a>
+            </div>
+        </div>
+    </aside>
+    <!-- Main Content Canvas -->
+    <main class="flex-1 lg:ml-64 p-margin-mobile md:p-margin-desktop min-h-screen">
+        <!-- Welcome Header -->
+        <header class="mb-10">
+            <h2 class="font-headline-md text-headline-md text-border-ink tracking-tight">Welcome back, Creator! 👋</h2>
+        </header>
+        <!-- Stats Grid -->
+        <section class="grid grid-cols-1 md:grid-cols-3 gap-gutter mb-12">
+            <!-- Stat Card 1 -->
+            <div
+                class="bg-surface-white border-border-width border-border-ink shadow-[4px_4px_0px_0px_#1A1A1A] rounded p-gutter flex flex-col justify-center">
+                <span class="font-label-mono text-label-mono text-on-surface-variant uppercase mb-2">Total
+                    Projects</span>
+                <span class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-border-ink">142</span>
+            </div>
+            <!-- Stat Card 2 -->
+            <div
+                class="bg-surface-alt-lavender border-border-width border-border-ink shadow-[4px_4px_0px_0px_#1A1A1A] rounded p-gutter flex flex-col justify-center">
+                <span class="font-label-mono text-label-mono text-on-surface-variant uppercase mb-2">Languages
+                    Used</span>
+                <span class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-border-ink">12</span>
+            </div>
+            <!-- Stat Card 3 -->
+            <div
+                class="bg-surface-white border-border-width border-border-ink shadow-[4px_4px_0px_0px_#1A1A1A] rounded p-gutter flex flex-col justify-center">
+                <span class="font-label-mono text-label-mono text-on-surface-variant uppercase mb-2">Words
+                    Localized</span>
+                <span class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-border-ink">1.2M</span>
+            </div>
+        </section>
+        <!-- Recent Projects -->
+        <section>
+            <h3 class="font-headline-sm text-headline-sm text-border-ink mb-6 flex items-center gap-2">
+                🎉 Recent Projects
+            </h3>
+            <div class="flex flex-col gap-4">
+                <!-- Video Row Card 1 (Complete) -->
+                <div
+                    class="bg-surface-white border-border-width border-border-ink shadow-[4px_4px_0px_0px_#1A1A1A] rounded p-base flex flex-col sm:flex-row items-start sm:items-center gap-4 hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_#1A1A1A] transition-all cursor-pointer group">
+                    <div
+                        class="w-full sm:w-32 h-20 bg-surface-container border-border-width border-border-ink rounded shrink-0 overflow-hidden relative">
+                        <img alt="Video thumbnail" class="w-full h-full object-cover"
+                            data-alt="A vibrant neo-brutalist style thumbnail image for a video project. It features bold flat colors, primarily bright yellow and stark white, enclosed by heavy black outlines. The composition is dynamic and abstract, resembling a modern pop-art collage with overlapping geometric shapes. The aesthetic is energetic and intentionally avoids realistic photographic details, leaning heavily into a graphic design feel."
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuClrPHShXPxxTede93RqXs_G2PiyneFlqaWmbiM3tGItTgpNhMADfBDeCFdZhHXvg0WJxXGofPFFykgzB81fJ6HbnO0p1q275b8D1XAchmfLQ32f2X06vIsu9twh7wG-wqXEhIr6X5e-pRx6Hnqc3_IT-7EnPEwd8aKdZjSsfXINfKUsd5zFjO_5etUiWbvi7ZntwaXwEI5JhaVhVKxx4PBCvUfZiYacPEr_f1i60PwIWUEubaR1pG1z01y942G_QyTqBTGZHDruc4" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h4 class="font-body-md font-bold text-border-ink truncate mb-1">Product_Launch_V2_Final.mp4
+                        </h4>
+                        <div class="flex items-center gap-2">
+                            <span
+                                class="inline-block bg-secondary text-on-secondary px-2 py-0.5 rounded-full font-label-mono text-[11px] border-2 border-border-ink">ES-MX</span>
+                            <span
+                                class="inline-block bg-secondary text-on-secondary px-2 py-0.5 rounded-full font-label-mono text-[11px] border-2 border-border-ink">FR-FR</span>
+                        </div>
+                    </div>
+                    <div
+                        class="flex flex-wrap items-center gap-4 sm:ml-auto w-full sm:w-auto justify-between sm:justify-end">
+                        <span
+                            class="px-3 py-1 bg-success-lime text-border-ink border-2 border-border-ink rounded-full font-label-mono text-xs font-bold uppercase tracking-wider">Complete</span>
+                        <div class="flex items-center gap-2">
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border-2 border-border-ink rounded bg-surface hover:bg-surface-container-high transition-colors text-border-ink"
+                                title="Download">
+                                <span class="material-symbols-outlined text-[20px]" data-icon="download">download</span>
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border-2 border-border-ink rounded bg-surface hover:bg-surface-container-high transition-colors text-border-ink"
+                                title="Subtitles">
+                                <span class="material-symbols-outlined text-[20px]"
+                                    data-icon="subtitles">subtitles</span>
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border-2 border-border-ink rounded bg-surface hover:bg-surface-container-high transition-colors text-border-ink"
+                                title="Insights">
+                                <span class="material-symbols-outlined text-[20px]"
+                                    data-icon="bar_chart">bar_chart</span>
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border-2 border-border-ink rounded bg-surface hover:bg-danger-pink hover:text-on-primary transition-colors text-border-ink"
+                                title="Delete">
+                                <span class="material-symbols-outlined text-[20px]" data-icon="delete">delete</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Video Row Card 2 (Processing) -->
+                <div
+                    class="bg-surface-white border-border-width border-border-ink shadow-[4px_4px_0px_0px_#1A1A1A] rounded p-base flex flex-col sm:flex-row items-start sm:items-center gap-4 hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_#1A1A1A] transition-all cursor-pointer group">
+                    <div
+                        class="w-full sm:w-32 h-20 bg-surface-container border-border-width border-border-ink rounded shrink-0 overflow-hidden relative">
+                        <div class="w-full h-full bg-surface-bright flex items-center justify-center">
+                            <span class="material-symbols-outlined text-4xl text-on-surface-variant animate-pulse"
+                                data-icon="movie">movie</span>
+                        </div>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h4 class="font-body-md font-bold text-border-ink truncate mb-1">Q3_Earnings_Call_Raw.mov</h4>
+                        <div class="flex items-center gap-2">
+                            <span
+                                class="inline-block bg-secondary text-on-secondary px-2 py-0.5 rounded-full font-label-mono text-[11px] border-2 border-border-ink">DE-DE</span>
+                        </div>
+                    </div>
+                    <div
+                        class="flex flex-wrap items-center gap-4 sm:ml-auto w-full sm:w-auto justify-between sm:justify-end">
+                        <span
+                            class="px-3 py-1 bg-warning-mango text-border-ink border-2 border-border-ink rounded-full font-label-mono text-xs font-bold uppercase tracking-wider flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[14px] animate-spin"
+                                data-icon="sync">sync</span>
+                            Processing
+                        </span>
+                        <div class="flex items-center gap-2 opacity-50 pointer-events-none">
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border-2 border-border-ink rounded bg-surface text-border-ink">
+                                <span class="material-symbols-outlined text-[20px]" data-icon="download">download</span>
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border-2 border-border-ink rounded bg-surface text-border-ink">
+                                <span class="material-symbols-outlined text-[20px]"
+                                    data-icon="subtitles">subtitles</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Video Row Card 3 (Failed) -->
+                <div
+                    class="bg-surface-white border-border-width border-border-ink shadow-[4px_4px_0px_0px_#1A1A1A] rounded p-base flex flex-col sm:flex-row items-start sm:items-center gap-4 hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_#1A1A1A] transition-all cursor-pointer group">
+                    <div
+                        class="w-full sm:w-32 h-20 bg-surface-container border-border-width border-border-ink rounded shrink-0 overflow-hidden relative">
+                        <img alt="Video thumbnail" class="w-full h-full object-cover grayscale opacity-70"
+                            data-alt="A neo-brutalist styled thumbnail graphic representing a corrupted or failed media file. It features stark contrasts with a washed-out, glitchy overlay. Heavy black borders frame disjointed, fragmented shapes in muted greys and a harsh flash of danger pink. The visual tone is intentionally disrupted and raw, signifying an error state in a highly stylized digital environment."
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBi8ZMx9i5aGIc1qztIm5G4F0kfEyVvu7f6Wgb24idJ-17SmJl6tIHiUV75TzoCw-Su-TprEpO-M7dznNNhRY1prnM--1lbQgV8YcZ8eMXTBDC4NawITtsX4w9vqJ0iFKzoW2rcOTSA8XGuXIg5eqUO6TOaYnAaVzifzQ9vKL0UXLOYJ5WMO1wT-ZJHf9BW9FCPPNaB4XO5_V3Hetnn8Ia_hV4UpP7afwcu_ivFj0nPAIP6uhxDHNc2unVnwRV6JA_L6VIhCKGYz1E" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h4 class="font-body-md font-bold text-border-ink truncate mb-1">Social_Promo_Short.mp4</h4>
+                        <div class="flex items-center gap-2">
+                            <span
+                                class="inline-block bg-secondary text-on-secondary px-2 py-0.5 rounded-full font-label-mono text-[11px] border-2 border-border-ink">JA-JP</span>
+                        </div>
+                    </div>
+                    <div
+                        class="flex flex-wrap items-center gap-4 sm:ml-auto w-full sm:w-auto justify-between sm:justify-end">
+                        <span
+                            class="px-3 py-1 bg-danger-pink text-on-primary border-2 border-border-ink rounded-full font-label-mono text-xs font-bold uppercase tracking-wider">Failed</span>
+                        <div class="flex items-center gap-2">
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border-2 border-border-ink rounded bg-surface hover:bg-surface-container-high transition-colors text-border-ink"
+                                title="Retry">
+                                <span class="material-symbols-outlined text-[20px]" data-icon="refresh">refresh</span>
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border-2 border-border-ink rounded bg-surface hover:bg-danger-pink hover:text-on-primary transition-colors text-border-ink"
+                                title="Delete">
+                                <span class="material-symbols-outlined text-[20px]" data-icon="delete">delete</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+    <!-- Floating Action Button (FAB) -->
+    <button aria-label="Create New"
+        class="fixed bottom-margin-mobile right-margin-mobile md:bottom-margin-desktop md:right-margin-desktop w-16 h-16 bg-secondary text-on-secondary rounded-full border-[4px] border-border-ink shadow-[4px_4px_0px_0px_#1A1A1A] flex items-center justify-center hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[8px_8px_0px_0px_#1A1A1A] active:translate-y-1 active:translate-x-1 active:shadow-none transition-all z-50">
+        <span class="material-symbols-outlined text-3xl" data-icon="add">add</span>
+    </button>
+</body>
+
+</html>
