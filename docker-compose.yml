@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # Redis for job caching and real-time updates
+  redis:
+    image: redis:7-alpine
+    container_name: nativity-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Backend API (Development with hot reload)
+  api:
+    build:
+      context: ./backend
+      dockerfile: dockerfile
+      target: runtime
+    container_name: nativity-api-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CLERK_ISSUER_URL=${CLERK_ISSUER_URL}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # Background Video Processing Worker (Development)
+  worker:
+    build:
+      context: ./backend
+      dockerfile: dockerfile.worker
+      target: worker
+    container_name: nativity-worker-dev
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["python", "start_worker.py", "--workers", "1", "--worker-prefix", "dev-worker"]
+
+  # Frontend (Development with hot reload)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: dockerfile
+      target: runner
+    container_name: nativity-frontend-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  redis_dev_data:
+    driver: local
+
+networks:
+  default:
+    name: nativity-dev-network
+    driver: bridge

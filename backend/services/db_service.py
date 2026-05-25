@@ -73,7 +73,9 @@ class DBService:
         draft_segments: Optional[List[Dict[str, Any]]] = None,
         output_s3_key: Optional[str] = None,
         subtitle_s3_key: Optional[str] = None,
-        words_localized: Optional[int] = None
+        words_localized: Optional[int] = None,
+        progress: Optional[int] = None,
+        error_message: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Save a video localization job to user's history.
@@ -91,6 +93,8 @@ class DBService:
             segments_count: Number of audio segments generated
             draft_segments: List of segment dicts for human review
             output_s3_key: S3 key for output file (for URL regeneration)
+            progress: Job progress percentage (0-100)
+            error_message: Error message if job failed
             
         Returns:
             dict with success status
@@ -131,6 +135,10 @@ class DBService:
             item['segments_count'] = segments_count
         if draft_segments:
             item['draft_segments'] = json.dumps(draft_segments)
+        if progress is not None:
+            item['progress'] = progress
+        if error_message:
+            item['error_message'] = error_message
         
         try:
             self.table.put_item(Item=item)
@@ -401,6 +409,126 @@ class DBService:
             
         except ClientError as e:
             return {"error": str(e)}
+    
+    def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a job by ID across all users (for system operations)
+        Note: This is expensive as it requires scanning
+        
+        Args:
+            job_id: Job ID to find
+            
+        Returns:
+            dict with job data or None
+        """
+        if not self.table:
+            return None
+        
+        try:
+            # Use GSI if available, otherwise scan (expensive)
+            response = self.table.scan(
+                FilterExpression='job_id = :job_id',
+                ExpressionAttributeValues={':job_id': job_id},
+                Limit=1
+            )
+            
+            items = response.get('Items', [])
+            return items[0] if items else None
+            
+        except ClientError:
+            return None
+    
+    def update_job_progress(
+        self,
+        user_id: str,
+        job_id: str,
+        progress: int,
+        message: str,
+        status: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Update job progress and message
+        
+        Args:
+            user_id: User ID
+            job_id: Job ID
+            progress: Progress percentage (0-100)
+            message: Status message
+            status: Optional new status
+            
+        Returns:
+            dict with success status
+        """
+        if not self.table:
+            return {"error": "DynamoDB not configured"}
+        
+        # Find the item
+        raw_item = self.get_video_by_job_id(user_id, job_id)
+        if not raw_item:
+            return {"error": "Job not found"}
+
+        pk = raw_item["PK"]
+        sk = raw_item["SK"]
+        
+        # Build update expression
+        update_expr = "SET progress = :progress, message = :message, updated_at = :updated"
+        expr_values = {
+            ":progress": progress,
+            ":message": message,
+            ":updated": datetime.utcnow().isoformat() + "Z"
+        }
+        expr_names = None
+        
+        if status:
+            update_expr += ", #status = :status"
+            expr_values[":status"] = status
+            expr_names = {"#status": "status"}
+        
+        try:
+            update_kwargs = {
+                "Key": {"PK": pk, "SK": sk},
+                "UpdateExpression": update_expr,
+                "ExpressionAttributeValues": expr_values
+            }
+            if expr_names:
+                update_kwargs["ExpressionAttributeNames"] = expr_names
+            
+            self.table.update_item(**update_kwargs)
+            return {"success": True, "job_id": job_id}
+            
+        except ClientError as e:
+            return {"error": str(e)}
+    
+    def get_active_jobs(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get all active jobs across all users (for system monitoring)
+        
+        Args:
+            limit: Maximum number of jobs to return
+            
+        Returns:
+            list of active job dictionaries
+        """
+        if not self.table:
+            return []
+        
+        try:
+            # Scan for active jobs (expensive operation, use sparingly)
+            response = self.table.scan(
+                FilterExpression='#status IN (:pending, :processing)',
+                ExpressionAttributeNames={'#status': 'status'},
+                ExpressionAttributeValues={
+                    ':pending': 'pending',
+                    ':processing': 'processing'
+                },
+                Limit=limit
+            )
+            
+            return response.get('Items', [])
+            
+        except ClientError as e:
+            print(f"Error getting active jobs: {e}")
+            return []
 
 
 # Singleton instance

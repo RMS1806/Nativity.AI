@@ -1,0 +1,77 @@
+# Terraform Variables Example for Nativity.AI
+# Copy this file to terraform.tfvars and update with your values
+
+# Project Configuration
+project_name = "nativity-ai"
+environment  = "dev"  # dev, staging, prod
+aws_region   = "us-east-1"
+
+# Network Configuration
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = 2
+
+# ECS Configuration
+ecs_api_cpu                = 512   # 0.5 vCPU
+ecs_api_memory            = 1024   # 1 GB
+ecs_worker_cpu            = 1024   # 1 vCPU
+ecs_worker_memory         = 2048   # 2 GB
+ecs_api_desired_count     = 2
+ecs_worker_desired_count  = 1
+
+# Auto Scaling Configuration
+api_autoscaling_min_capacity    = 1
+api_autoscaling_max_capacity    = 10
+worker_autoscaling_min_capacity = 1
+worker_autoscaling_max_capacity = 20
+
+# Application Secrets (REQUIRED - Replace with your actual values)
+google_api_key    = "your-google-gemini-api-key-here"
+clerk_issuer_url  = "your-clerk-issuer-url-here"
+
+# Domain Configuration (Optional)
+domain_name     = ""  # e.g., "api.nativity.ai"
+certificate_arn = ""  # ACM certificate ARN for HTTPS
+
+# Redis Configuration
+redis_node_type        = "cache.t3.micro"  # Use cache.r6g.large for production
+redis_num_cache_nodes  = 1
+
+# Monitoring Configuration
+enable_detailed_monitoring = true
+log_retention_days        = 14  # Use 30+ for production
+
+# Cost Optimization
+enable_spot_instances      = false  # Set to true for cost savings (dev/staging)
+s3_intelligent_tiering    = true
+
+# Security Configuration
+allowed_cidr_blocks = ["0.0.0.0/0"]  # Restrict this in production!
+enable_waf         = true
+
+# Backup Configuration
+backup_retention_days           = 7
+enable_point_in_time_recovery  = true
+
+# Example values for different environments:
+
+# Development Environment
+# ecs_api_cpu = 256
+# ecs_api_memory = 512
+# redis_node_type = "cache.t3.micro"
+# enable_spot_instances = true
+# log_retention_days = 7
+
+# Staging Environment
+# ecs_api_cpu = 512
+# ecs_api_memory = 1024
+# redis_node_type = "cache.t3.small"
+# enable_spot_instances = false
+# log_retention_days = 14
+
+# Production Environment
+# ecs_api_cpu = 1024
+# ecs_api_memory = 2048
+# redis_node_type = "cache.r6g.large"
+# enable_spot_instances = false
+# log_retention_days = 30
+# backup_retention_days = 30

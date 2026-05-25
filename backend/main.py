@@ -15,6 +15,9 @@ from services.gemini_service import gemini_service
 from services.s3_service import s3_service
 from services.ffmpeg_service import ffmpeg_service, check_ffmpeg_installation
 from services.tts_service import tts_service
+from services.redis_service import redis_service
+from services.job_service import job_service
+from services.queue_service import queue_service
 
 
 @asynccontextmanager
@@ -28,6 +31,8 @@ async def lifespan(app: FastAPI):
     print("="*50)
     print(f"   ✓ Gemini API: {'✅ Ready' if gemini_service.is_configured() else '❌ Not configured'}")
     print(f"   ✓ AWS S3:     {'✅ Ready' if s3_service.is_configured() else '❌ Not configured'}")
+    print(f"   ✓ Redis:      {'✅ Ready' if redis_service.is_available() else '⚠️  Not available (will use DynamoDB only)'}")
+    print(f"   ✓ Queue:      {'✅ Ready' if queue_service.is_available() else '⚠️  Using local queue (not suitable for production)'}")
     print(f"   ✓ FFmpeg:     {'✅ Ready' if ffmpeg_service.is_available() else '❌ Not installed'}")
     print(f"   ✓ TTS:        ✅ Ready (edge-tts)")
     
@@ -99,6 +104,8 @@ async def health_check():
     """Detailed health check for monitoring"""
     config_status = settings.validate()
     ffmpeg_status = check_ffmpeg_installation()
+    job_service_health = job_service.health_check()
+    queue_service_health = queue_service.health_check()
     
     all_services_ready = (
         gemini_service.is_configured() and
@@ -112,12 +119,17 @@ async def health_check():
             "api": "running",
             "gemini": "ready" if gemini_service.is_configured() else "not configured",
             "aws_s3": "ready" if s3_service.is_configured() else "not configured",
+            "redis": job_service_health["redis"]["status"],
+            "dynamodb": job_service_health["dynamodb"]["status"],
+            "queue": queue_service_health["status"],
             "ffmpeg": "ready" if ffmpeg_service.is_available() else "not installed",
             "tts": "ready"  # edge-tts is always available
         },
         "ffmpeg_details": ffmpeg_status,
         "configuration": config_status,
-        "supported_languages": settings.SUPPORTED_LANGUAGES
+        "supported_languages": settings.SUPPORTED_LANGUAGES,
+        "job_management": job_service_health,
+        "queue_system": queue_service_health
     }
 
 

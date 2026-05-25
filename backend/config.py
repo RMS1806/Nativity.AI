@@ -89,6 +89,9 @@ class Settings:
     AWS_REGION: str = os.getenv("AWS_REGION", "eu-north-1")
     S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "")
     
+    # Redis Configuration
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    
     # Application Settings
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "./uploads")
     OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "./outputs")

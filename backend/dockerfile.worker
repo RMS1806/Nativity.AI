@@ -1,0 +1,64 @@
+# Multi-stage Docker build for Nativity.ai Worker
+# Optimized for video processing workloads
+
+# Stage 1: Build dependencies
+FROM python:3.10-slim as builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Stage 2: Worker runtime
+FROM python:3.10-slim as worker
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install runtime dependencies for video processing
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    curl \
+    htop \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Create worker user
+RUN groupadd -r worker && useradd -r -g worker worker
+
+# Set working directory
+WORKDIR /app
+
+# Copy application code
+COPY . .
+
+# Create temp directories for video processing
+RUN mkdir -p /tmp/nativity_processing && \
+    chown -R worker:worker /app /tmp/nativity_processing
+
+# Switch to worker user
+USER worker
+
+# Health check for worker (checks if it can connect to queue)
+HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
+    CMD python -c "from services.queue_service import queue_service; print('Queue:', queue_service.health_check()['status'])" || exit 1
+
+# Default command: start single worker
+CMD ["python", "start_worker.py", "--workers", "1", "--worker-prefix", "container-worker"]

@@ -7,8 +7,12 @@ python-multipart
 google-genai
 google-api-core
 
-# AWS
+# AWS (S3, SQS, DynamoDB)
 boto3
+botocore
+
+# Redis for caching and job management
+redis
 
 # Text-to-Speech
 edge-tts

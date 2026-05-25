@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # Redis for job caching and real-time updates
+  redis:
+    image: redis:7-alpine
+    container_name: nativity-redis-prod
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_prod_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # Backend API (Production optimized)
+  api:
+    build:
+      context: ./backend
+      dockerfile: dockerfile
+      target: runtime
+    container_name: nativity-api-prod
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CLERK_ISSUER_URL=${CLERK_ISSUER_URL}
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # Video Processing Workers (Scalable)
+  worker:
+    build:
+      context: ./backend
+      dockerfile: dockerfile.worker
+      target: worker
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 2  # Run 2 workers by default
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+    # Scale workers based on load
+    # docker-compose up --scale worker=4
+
+  # Frontend (Production build)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: dockerfile
+      target: runner
+    container_name: nativity-frontend-prod
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+    depends_on:
+      - api
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # Nginx reverse proxy (Production)
+  nginx:
+    image: nginx:alpine
+    container_name: nativity-nginx-prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+      - frontend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+
+volumes:
+  redis_prod_data:
+    driver: local
+
+networks:
+  default:
+    name: nativity-prod-network
+    driver: bridge

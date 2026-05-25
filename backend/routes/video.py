@@ -31,14 +31,14 @@ from services.ffmpeg_service import ffmpeg_service, check_ffmpeg_installation
 from config import settings
 from dependencies import get_current_user, get_optional_user
 from services.db_service import db_service
+from services.job_service import job_service
+from services.queue_service import queue_service, JobPriority
 
 router = APIRouter(prefix="/api/video", tags=["Video Localization"])
 
-# In-memory job storage (replace with Redis/DB in production)
-jobs: dict[str, LocalizationJob] = {}
-
-# Store analysis results for jobs (would be DB in production)
-job_results: dict[str, dict] = {}
+# Remove in-memory storage - now using job_service + queue_service
+# jobs: dict[str, LocalizationJob] = {}  # REMOVED
+# job_results: dict[str, dict] = {}      # REMOVED
 
 
 @router.post("/upload-url", response_model=VideoUploadResponse)
@@ -67,47 +67,98 @@ async def get_upload_url(request: VideoUploadRequest):
 @router.post("/localize")
 async def start_localization(
     request: LocalizationRequest,
-    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user)
 ):
     """
-    Start full video localization pipeline.
+    Start full video localization pipeline using queue system.
     
-    Complete pipeline runs in background:
-    1. Download video from S3
-    2. Analyze with Gemini (transcript, translation, cultural adaptation)
-    3. Generate TTS audio
-    4. Stitch with FFmpeg
-    5. Upload result to S3
+    NEW BEHAVIOR:
+    - Job is immediately queued for background processing
+    - API responds instantly with job_id
+    - Background worker processes the job asynchronously
+    - Poll /api/video/job/{job_id} for real-time status
     
-    Returns job_id immediately. Poll /api/video/job/{job_id} for status.
+    Returns job_id immediately. No more waiting for processing!
     """
-    job_id = str(uuid.uuid4())
     user_id = user.get("sub")
     
-    job = LocalizationJob(
-        job_id=job_id,
-        status=JobStatus.PENDING,
-        progress=0,
-        message="Job created, starting full localization...",
+    # Create job using job service
+    job = job_service.create_job(
+        user_id=user_id,
         input_file=request.file_key,
         target_language=request.target_language.value
     )
-    jobs[job_id] = job
     
-    # Add background processing task for FULL pipeline
-    background_tasks.add_task(
-        process_localization_job,
-        job_id,
-        request.file_key,
-        request.target_language.value,
-        user_id
+    # Queue job for background processing (no more background_tasks!)
+    await queue_service.enqueue_job(
+        job_type="video_localization",
+        user_id=user_id,
+        payload={
+            "file_key": request.file_key,
+            "target_language": request.target_language.value
+        },
+        priority=JobPriority.NORMAL
     )
     
     return {
-        "job_id": job_id,
-        "status": "processing",
-        "message": "Localization started. Poll /api/video/job/{job_id} for status."
+        "job_id": job.job_id,
+        "status": "queued",
+        "message": "Job queued for processing. Poll /api/video/job/{job_id} for status."
+    }
+
+
+@router.post("/create-draft")
+async def create_translation_draft(
+    request: LocalizationRequest,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Create translation draft for human review (Phase 1 of two-phase workflow).
+    
+    This endpoint:
+    1. Analyzes video with Gemini
+    2. Generates translation segments
+    3. Returns segments for human review/editing
+    4. Does NOT generate TTS or final video
+    
+    Use /api/video/finalize after reviewing/editing segments.
+    """
+    user_id = user.get("sub")
+    
+    # Create job for draft creation
+    job = job_service.create_job(
+        user_id=user_id,
+        input_file=request.file_key,
+        target_language=request.target_language.value
+    )
+    
+    # Queue draft creation job (higher priority than full processing)
+    await queue_service.enqueue_job(
+        job_type="draft_creation",
+        user_id=user_id,
+        payload={
+            "file_key": request.file_key,
+            "target_language": request.target_language.value
+        },
+        priority=JobPriority.HIGH  # Drafts get priority
+    )
+    
+    return {
+        "job_id": job.job_id,
+        "status": "queued",
+        "message": "Draft creation queued. Poll /api/video/job/{job_id} for status."
+    }
+
+
+@router.get("/queue/status")
+async def get_queue_status():
+    """
+    Get queue statistics and health
+    Useful for monitoring and debugging
+    """
+    return {
+        "queue_health": queue_service.health_check(),
+        "queue_stats": queue_service.get_queue_stats()
     }
 
 
@@ -783,15 +834,17 @@ async def get_job_status(job_id: str):
     Get the status of a localization job
     Frontend polls this endpoint to show progress
     """
-    job = jobs.get(job_id)
+    job = job_service.get_job_status(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
     response = job.dict()
     
     # Include results if job is complete
-    if job.status == JobStatus.COMPLETE and job_id in job_results:
-        response["results"] = job_results[job_id]
+    if job.status == JobStatus.COMPLETE:
+        results = job_service.get_job_results(job_id)
+        if results:
+            response["results"] = results
     
     return response
 
