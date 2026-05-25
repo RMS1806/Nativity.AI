@@ -1,26 +1,49 @@
 @import "tailwindcss";
 
-/* ─── Neon Cyber-Glassmorphism Design Tokens ──────────────────────── */
+/* ─── Neo Brutalism Design Tokens ──────────────────────────────── */
 :root {
-  --color-neon-cyan:    #00E5FF;
-  --color-neon-magenta: #FF00FF;
-  --color-volt-green:   #CCFF00;
-  --color-void-black:   #050505;
-  --color-glass-dark:   rgba(255, 255, 255, 0.05);
+  /* Primary palette */
+  --color-primary: #ba061b;
+  --color-secondary: #8127cf;
+  --color-secondary-container: #9c48ea;
+  --color-tertiary: #0058be;
+  --color-success-lime: #BFFF00;
+  --color-warning-mango: #FBBF24;
+  --color-danger-pink: #FF2D78;
+
+  /* Surfaces */
+  --color-background: #fff8f1;
+  --color-surface: #fff8f1;
+  --color-surface-white: #FFFFFF;
+  --color-surface-container: #f4ede5;
+  --color-surface-container-high: #eee7df;
+  --color-surface-alt-lavender: #F3EDFF;
+
+  /* Text */
+  --color-on-surface: #1e1b17;
+  --color-on-surface-variant: #5c403d;
+  --color-border-ink: #1A1A1A;
+  --color-on-primary: #ffffff;
+  --color-on-secondary: #ffffff;
+
+  /* Fonts */
+  --font-headline: var(--font-space-grotesk), 'Space Grotesk', system-ui, sans-serif;
+  --font-body: var(--font-inter), 'Inter', system-ui, sans-serif;
+  --font-mono: var(--font-space-mono), 'Space Mono', monospace;
 }
 
 @theme inline {
-  --color-background: var(--color-void-black);
-  --color-foreground: #e2e8f0;
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--color-background);
+  --color-foreground: var(--color-on-surface);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
 }
 
-/* ─── Base ─────────────────────────────────────────────────────────── */
+/* ─── Base ─────────────────────────────────────────────────────── */
 body {
-  background-color: var(--color-void-black);
-  color: #e2e8f0;
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-on-surface);
+  font-family: var(--font-body);
   min-height: 100vh;
 }
 
@@ -28,149 +51,135 @@ html {
   scroll-behavior: smooth;
 }
 
-/* ─── Scrollbar ─────────────────────────────────────────────────────── */
+/* ─── Scrollbar ─────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #0a0a0a;
+  background: var(--color-surface-container);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 229, 255, 0.25);
-  border-radius: 4px;
+  background: var(--color-border-ink);
+  border-radius: 0;
+  border: 2px solid var(--color-surface-container);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 229, 255, 0.5);
+  background: var(--color-primary);
 }
 
-/* ─── Focus ─────────────────────────────────────────────────────────── */
+/* ─── Focus ─────────────────────────────────────────────────────── */
 *:focus-visible {
-  outline: 2px solid var(--color-neon-cyan);
+  outline: 3px solid var(--color-primary);
   outline-offset: 2px;
 }
 
-/* ─── Keyframes ─────────────────────────────────────────────────────── */
+/* ─── Neo Brutalism Utility Classes ─────────────────────────────── */
 
-/* Breathing box-shadow glow */
-@keyframes glowPulse {
-  0%, 100% {
-    box-shadow:
-      0 0 20px rgba(0, 229, 255, 0.2),
-      0 0 40px rgba(0, 229, 255, 0.1),
-      inset 0 0 20px rgba(0, 229, 255, 0.05);
-  }
-  50% {
-    box-shadow:
-      0 0 40px rgba(0, 229, 255, 0.45),
-      0 0 80px rgba(0, 229, 255, 0.2),
-      inset 0 0 30px rgba(0, 229, 255, 0.1);
-  }
+/* Standard shadow */
+.neo-shadow {
+  box-shadow: 4px 4px 0px 0px var(--color-border-ink);
 }
 
-/* Magenta glow pulse (drag-active state) */
-@keyframes glowPulseMagenta {
-  0%, 100% {
-    box-shadow:
-      0 0 20px rgba(255, 0, 255, 0.3),
-      0 0 50px rgba(255, 0, 255, 0.15);
-  }
-  50% {
-    box-shadow:
-      0 0 50px rgba(255, 0, 255, 0.6),
-      0 0 100px rgba(255, 0, 255, 0.25);
-  }
+/* Hover lift */
+.neo-shadow-hover {
+  transition: all 0.2s ease;
+}
+.neo-shadow-hover:hover {
+  box-shadow: 6px 6px 0px 0px var(--color-border-ink);
+  transform: translate(-2px, -2px);
 }
 
-/* Spinning conic-gradient border for processing state */
-@keyframes borderSpin {
-  0%   { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+/* Active press */
+.neo-shadow-active:active {
+  box-shadow: 0px 0px 0px 0px var(--color-border-ink);
+  transform: translate(4px, 4px);
 }
 
-/* Subtle float for idle icon */
+/* Large shadow for modals/cards */
+.neo-shadow-lg {
+  box-shadow: 8px 8px 0px 0px var(--color-border-ink);
+}
+
+/* Neo Brutalism border */
+.neo-border {
+  border: 3px solid var(--color-border-ink);
+}
+
+/* Upload zone dashed border */
+.upload-dashed-border {
+  border: 4px dashed var(--color-border-ink);
+}
+
+/* ─── Typography ────────────────────────────────────────────────── */
+.font-headline {
+  font-family: var(--font-headline);
+}
+
+.font-body {
+  font-family: var(--font-body);
+}
+
+.font-mono-label {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+
+/* ─── Keyframes ─────────────────────────────────────────────────── */
+
+/* Subtle float for idle icons */
 @keyframes floatY {
   0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-8px); }
+  50%      { transform: translateY(-10px); }
 }
 
-/* Scanline shimmer */
-@keyframes shimmer {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(200%); }
-}
-
-/* ─── Utility Classes ────────────────────────────────────────────────── */
-
-.glow-pulse {
-  animation: glowPulse 2.5s ease-in-out infinite;
-}
-
-.glow-pulse-magenta {
-  animation: glowPulseMagenta 1.8s ease-in-out infinite;
-}
-
-.border-spin-wrapper {
-  position: relative;
-  border-radius: inherit;
-}
-
-.border-spin-wrapper::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    var(--color-neon-cyan) 90deg,
-    var(--color-neon-magenta) 180deg,
-    transparent 270deg
-  );
-  animation: borderSpin 1.8s linear infinite;
-  z-index: 0;
-}
-
-.border-spin-inner {
-  position: relative;
-  z-index: 1;
-  background: #0a0a14;
-  border-radius: inherit;
-  width: 100%;
-  height: 100%;
-}
-
-/* Neon logo gradient */
-.neon-text-gradient {
-  background: linear-gradient(90deg, var(--color-neon-cyan) 0%, var(--color-neon-magenta) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Glassmorphism panel */
-.glass-panel {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Float animation utility */
 .float-y {
   animation: floatY 3s ease-in-out infinite;
 }
 
-/* Shimmer overlay */
-.shimmer-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.08) 50%,
-    transparent 100%
-  );
-  animation: shimmer 2.5s infinite;
-  pointer-events: none;
+/* Pulse animation for active processing step */
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--color-warning-mango); }
+  50%      { border-color: var(--color-primary); }
+}
+
+.pulse-active {
+  animation: pulse-border 1.5s ease-in-out infinite;
+}
+
+/* Progress bar fill animation */
+@keyframes progressFill {
+  from { width: 0%; }
+  to   { width: var(--progress-width, 0%); }
+}
+
+.animate-progress-fill {
+  animation: progressFill 0.5s ease-out forwards;
+}
+
+/* Confetti fall animation */
+@keyframes confetti-fall {
+  0% {
+    opacity: 1;
+    top: -10%;
+    transform: translateX(0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    top: 100%;
+    transform: translateX(100px) rotate(360deg);
+  }
+}
+
+/* Spin animation */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.animate-neo-spin {
+  animation: spin 1s linear infinite;
 }

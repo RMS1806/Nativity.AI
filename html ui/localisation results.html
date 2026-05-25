@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Video Result - Creator Studio</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400..700&amp;family=Inter:wght@400..700&amp;family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#1e1b17",
+                        "tertiary-fixed": "#d8e2ff",
+                        "surface-bright": "#fff8f1",
+                        "tertiary-fixed-dim": "#adc6ff",
+                        "inverse-on-surface": "#f7f0e8",
+                        "secondary-container": "#9c48ea",
+                        "on-primary": "#ffffff",
+                        "secondary": "#8127cf",
+                        "on-error-container": "#93000a",
+                        "primary": "#ba061b",
+                        "inverse-surface": "#33302b",
+                        "on-background": "#1e1b17",
+                        "success-lime": "#BFFF00",
+                        "on-secondary": "#ffffff",
+                        "surface-tint": "#be0b1d",
+                        "primary-fixed-dim": "#ffb3ad",
+                        "surface-container-highest": "#e8e1da",
+                        "surface-container-high": "#eee7df",
+                        "on-tertiary-fixed": "#001a42",
+                        "on-tertiary": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "surface-container-low": "#f9f3eb",
+                        "on-error": "#ffffff",
+                        "inverse-primary": "#ffb3ad",
+                        "error": "#ba1a1a",
+                        "surface-dim": "#dfd9d1",
+                        "surface": "#fff8f1",
+                        "on-surface-variant": "#5c403d",
+                        "secondary-fixed-dim": "#ddb7ff",
+                        "surface-white": "#FFFFFF",
+                        "secondary-fixed": "#f0dbff",
+                        "surface-variant": "#e8e1da",
+                        "border-ink": "#1A1A1A",
+                        "primary-container": "#df2b31",
+                        "outline": "#906f6c",
+                        "on-secondary-fixed-variant": "#6900b3",
+                        "on-secondary-container": "#fffbff",
+                        "outline-variant": "#e5bdb9",
+                        "primary-fixed": "#ffdad7",
+                        "on-primary-container": "#fffbff",
+                        "on-tertiary-container": "#fefcff",
+                        "on-primary-fixed-variant": "#930012",
+                        "tertiary": "#0058be",
+                        "danger-pink": "#FF2D78",
+                        "warning-mango": "#FBBF24",
+                        "on-secondary-fixed": "#2c0051",
+                        "background": "#fff8f1",
+                        "on-tertiary-fixed-variant": "#004395",
+                        "surface-container": "#f4ede5",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-fixed": "#410004",
+                        "tertiary-container": "#2170e4",
+                        "surface-alt-lavender": "#F3EDFF"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "8px",
+                        "border-width": "3px",
+                        "margin-desktop": "40px",
+                        "gutter": "24px",
+                        "margin-mobile": "16px",
+                        "shadow-offset": "4px"
+                    },
+                    "fontFamily": {
+                        "label-mono": [
+                            "Space Mono"
+                        ],
+                        "headline-lg": [
+                            "Space Grotesk"
+                        ],
+                        "body-lg": [
+                            "Inter"
+                        ],
+                        "headline-xl": [
+                            "Space Grotesk"
+                        ],
+                        "headline-sm": [
+                            "Space Grotesk"
+                        ],
+                        "headline-lg-mobile": [
+                            "Space Grotesk"
+                        ],
+                        "headline-md": [
+                            "Space Grotesk"
+                        ],
+                        "body-md": [
+                            "Inter"
+                        ]
+                    },
+                    "fontSize": {
+                        "label-mono": [
+                            "14px",
+                            {
+                                "lineHeight": "1.2",
+                                "letterSpacing": "0.05em",
+                                "fontWeight": "500"
+                            }
+                        ],
+                        "headline-lg": [
+                            "48px",
+                            {
+                                "lineHeight": "1.1",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "body-lg": [
+                            "18px",
+                            {
+                                "lineHeight": "1.6",
+                                "fontWeight": "400"
+                            }
+                        ],
+                        "headline-xl": [
+                            "64px",
+                            {
+                                "lineHeight": "1.1",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "headline-sm": [
+                            "24px",
+                            {
+                                "lineHeight": "1.2",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "headline-lg-mobile": [
+                            "36px",
+                            {
+                                "lineHeight": "1.1",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "headline-md": [
+                            "32px",
+                            {
+                                "lineHeight": "1.2",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "body-md": [
+                            "16px",
+                            {
+                                "lineHeight": "1.6",
+                                "fontWeight": "400"
+                            }
+                        ]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        .neo-shadow {
+            box-shadow: 4px 4px 0px 0px #1A1A1A;
+        }
+
+        .neo-shadow-hover:hover {
+            box-shadow: 6px 6px 0px 0px #1A1A1A;
+            transform: translate(-2px, -2px);
+        }
+
+        .neo-shadow-active:active {
+            box-shadow: 0px 0px 0px 0px #1A1A1A;
+            transform: translate(4px, 4px);
+        }
+
+        .neo-shadow-lg {
+            box-shadow: 8px 8px 0px 0px #1A1A1A;
+        }
+
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #f00;
+            opacity: 0;
+        }
+
+        @keyframes fall {
+            0% {
+                opacity: 1;
+                top: -10%;
+                transform: translateX(0) rotate(0deg);
+            }
+
+            100% {
+                opacity: 0;
+                top: 100%;
+                transform: translateX(100px) rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body
+    class="bg-surface text-on-surface font-body-lg min-h-screen flex items-center justify-center p-margin-mobile md:p-margin-desktop overflow-hidden">
+    <!-- Confetti Container -->
+    <div class="fixed inset-0 pointer-events-none z-0" id="confetti-container"></div>
+    <!-- Main Success Card -->
+    <main
+        class="w-full max-w-4xl bg-surface-white border-border-width border-border-ink neo-shadow-lg p-gutter md:p-margin-desktop relative z-10 flex flex-col gap-8">
+        <!-- Header Section -->
+        <header class="text-center space-y-4">
+            <div
+                class="inline-flex items-center justify-center w-20 h-20 bg-success-lime border-border-width border-border-ink rounded-full neo-shadow mb-4">
+                <span class="material-symbols-outlined text-headline-xl"
+                    style="font-variation-settings: 'FILL' 1;">check_circle</span>
+            </div>
+            <h1
+                class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-border-ink">
+                Localization Complete!</h1>
+            <p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mx-auto">Your video has been
+                successfully localized into Hindi, Marathi, and Tamil with culturally adapted visuals and subtitles.</p>
+        </header>
+        <!-- Video Preview Section -->
+        <section
+            class="relative w-full aspect-video bg-border-ink border-border-width border-border-ink overflow-hidden neo-shadow group cursor-pointer">
+            <img alt="Video preview thumbnail"
+                class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-300"
+                data-alt="A vibrant, high-energy video thumbnail showing a modern Indian street scene with neon lights and dynamic movement. The style is bold and neo-brutalist, matching a high-octane digital platform. Colors are highly saturated with deep black contrast. The scene captures youthful, authentic energy suitable for a digital native audience."
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCrF5O0q-5HrFaPpATiAa_ck3vaTU2LQfxsBm4_i2zehnLCKzmYizGWvQN6yzR4bMFRxrSVqyW3gOEyqJH4xQ1hCNdg9SMZLFvC9sRzZVfWvdqYwpXfwNQBifc6P4CTXX3GJ-lIm0BswKIriKjykil3CIcgFhsb-W6JW_tcCdrga78PjbUieCoq5IX9cnyuRYTdaj39X8oGBBown6OUTNgMPTL_-vZePuMuPdPW65Pv2JqsIVNijGFr5sSlh_o4KrjncQfDindeW9E" />
+            <div class="absolute inset-0 flex items-center justify-center">
+                <button aria-label="Play Video"
+                    class="w-24 h-24 bg-primary border-border-width border-border-ink rounded-full neo-shadow neo-shadow-hover neo-shadow-active flex items-center justify-center transition-all duration-200">
+                    <span class="material-symbols-outlined text-surface-white text-[48px]"
+                        style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+                </button>
+            </div>
+            <div
+                class="absolute bottom-4 left-4 bg-surface-white border-border-width border-border-ink px-4 py-2 neo-shadow flex gap-2">
+                <span class="font-label-mono text-label-mono font-bold">Hindi</span>
+                <span class="font-label-mono text-label-mono text-on-surface-variant">• 02:45</span>
+            </div>
+        </section>
+        <!-- Action Row -->
+        <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <button
+                class="bg-tertiary text-surface-white border-border-width border-border-ink py-4 px-6 font-label-mono text-label-mono font-bold uppercase tracking-wider neo-shadow neo-shadow-hover neo-shadow-active transition-all duration-200 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined">download</span>
+                Download Full
+            </button>
+            <button
+                class="bg-success-lime text-border-ink border-border-width border-border-ink py-4 px-6 font-label-mono text-label-mono font-bold uppercase tracking-wider neo-shadow neo-shadow-hover neo-shadow-active transition-all duration-200 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined">share</span>
+                WhatsApp Version
+            </button>
+            <button
+                class="bg-surface-white text-border-ink border-border-width border-border-ink py-4 px-6 font-label-mono text-label-mono font-bold uppercase tracking-wider neo-shadow neo-shadow-hover neo-shadow-active transition-all duration-200 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined">subtitles</span>
+                Download Subtitles
+            </button>
+        </section>
+        <!-- Teaser Section -->
+        <section
+            class="mt-4 bg-surface-alt-lavender border-border-width border-border-ink p-6 flex flex-col sm:flex-row items-center justify-between gap-4 neo-shadow">
+            <div class="flex items-center gap-4">
+                <div
+                    class="w-12 h-12 bg-secondary-container border-border-width border-border-ink flex items-center justify-center neo-shadow">
+                    <span class="material-symbols-outlined text-surface-white">monitoring</span>
+                </div>
+                <div>
+                    <h3 class="font-headline-sm text-headline-sm text-border-ink">Cultural Insights Generated</h3>
+                    <p class="font-body-md text-body-md text-on-surface-variant">See how local nuances boosted predicted
+                        engagement by 42%.</p>
+                </div>
+            </div>
+            <a class="inline-block bg-primary text-surface-white border-border-width border-border-ink py-3 px-6 font-label-mono text-label-mono font-bold uppercase tracking-wider neo-shadow neo-shadow-hover neo-shadow-active transition-all duration-200 whitespace-nowrap"
+                href="#">
+                View Report
+            </a>
+        </section>
+        <button
+            class="mt-4 font-label-mono text-label-mono text-on-surface-variant hover:text-border-ink underline decoration-border-ink/30 hover:decoration-border-ink decoration-2 underline-offset-4 transition-all duration-200 self-center">
+            Start Another Localization
+        </button>
+    </main>
+    <script>
+        // Simple confetti effect
+        const colors = ['#BFFF00', '#ba061b', '#9c48ea', '#FBBF24', '#0058be'];
+        const container = document.getElementById('confetti-container');
+
+        function createConfetti() {
+            for (let i = 0; i < 100; i++) {
+                const confetti = document.createElement('div');
+                confetti.classList.add('confetti', 'border-2', 'border-border-ink');
+
+                // Randomize properties
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                const left = Math.random() * 100 + 'vw';
+                const animationDuration = Math.random() * 3 + 2 + 's';
+                const delay = Math.random() * 2 + 's';
+                const size = Math.random() * 10 + 5 + 'px';
+
+                confetti.style.backgroundColor = color;
+                confetti.style.left = left;
+                confetti.style.width = size;
+                confetti.style.height = size;
+                confetti.style.animation = `fall ${animationDuration} ${delay} forwards linear`;
+
+                container.appendChild(confetti);
+            }
+        }
+
+        // Trigger on load
+        window.onload = createConfetti;
+    </script>
+</body>
+
+</html>

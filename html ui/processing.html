@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Creator Studio - Upload</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&amp;family=Inter:wght@400;500&amp;family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#1e1b17",
+                        "tertiary-fixed": "#d8e2ff",
+                        "surface-bright": "#fff8f1",
+                        "tertiary-fixed-dim": "#adc6ff",
+                        "inverse-on-surface": "#f7f0e8",
+                        "secondary-container": "#9c48ea",
+                        "on-primary": "#ffffff",
+                        "secondary": "#8127cf",
+                        "on-error-container": "#93000a",
+                        "primary": "#ba061b",
+                        "inverse-surface": "#33302b",
+                        "on-background": "#1e1b17",
+                        "success-lime": "#BFFF00",
+                        "on-secondary": "#ffffff",
+                        "surface-tint": "#be0b1d",
+                        "primary-fixed-dim": "#ffb3ad",
+                        "surface-container-highest": "#e8e1da",
+                        "surface-container-high": "#eee7df",
+                        "on-tertiary-fixed": "#001a42",
+                        "on-tertiary": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "surface-container-low": "#f9f3eb",
+                        "on-error": "#ffffff",
+                        "inverse-primary": "#ffb3ad",
+                        "error": "#ba1a1a",
+                        "surface-dim": "#dfd9d1",
+                        "surface": "#fff8f1",
+                        "on-surface-variant": "#5c403d",
+                        "secondary-fixed-dim": "#ddb7ff",
+                        "surface-white": "#FFFFFF",
+                        "secondary-fixed": "#f0dbff",
+                        "surface-variant": "#e8e1da",
+                        "border-ink": "#1A1A1A",
+                        "primary-container": "#df2b31",
+                        "outline": "#906f6c",
+                        "on-secondary-fixed-variant": "#6900b3",
+                        "on-secondary-container": "#fffbff",
+                        "outline-variant": "#e5bdb9",
+                        "primary-fixed": "#ffdad7",
+                        "on-primary-container": "#fffbff",
+                        "on-tertiary-container": "#fefcff",
+                        "on-primary-fixed-variant": "#930012",
+                        "tertiary": "#0058be",
+                        "danger-pink": "#FF2D78",
+                        "warning-mango": "#FBBF24",
+                        "on-secondary-fixed": "#2c0051",
+                        "background": "#fff8f1",
+                        "on-tertiary-fixed-variant": "#004395",
+                        "surface-container": "#f4ede5",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-fixed": "#410004",
+                        "tertiary-container": "#2170e4",
+                        "surface-alt-lavender": "#F3EDFF"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "8px",
+                        "border-width": "3px",
+                        "margin-desktop": "40px",
+                        "gutter": "24px",
+                        "margin-mobile": "16px",
+                        "shadow-offset": "4px"
+                    },
+                    "fontFamily": {
+                        "label-mono": [
+                            "Space Mono"
+                        ],
+                        "headline-lg": [
+                            "Space Grotesk"
+                        ],
+                        "body-lg": [
+                            "Inter"
+                        ],
+                        "headline-xl": [
+                            "Space Grotesk"
+                        ],
+                        "headline-sm": [
+                            "Space Grotesk"
+                        ],
+                        "headline-lg-mobile": [
+                            "Space Grotesk"
+                        ],
+                        "headline-md": [
+                            "Space Grotesk"
+                        ],
+                        "body-md": [
+                            "Inter"
+                        ]
+                    },
+                    "fontSize": {
+                        "label-mono": [
+                            "14px",
+                            {
+                                "lineHeight": "1.2",
+                                "letterSpacing": "0.05em",
+                                "fontWeight": "500"
+                            }
+                        ],
+                        "headline-lg": [
+                            "48px",
+                            {
+                                "lineHeight": "1.1",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "body-lg": [
+                            "18px",
+                            {
+                                "lineHeight": "1.6",
+                                "fontWeight": "400"
+                            }
+                        ],
+                        "headline-xl": [
+                            "64px",
+                            {
+                                "lineHeight": "1.1",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "headline-sm": [
+                            "24px",
+                            {
+                                "lineHeight": "1.2",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "headline-lg-mobile": [
+                            "36px",
+                            {
+                                "lineHeight": "1.1",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "headline-md": [
+                            "32px",
+                            {
+                                "lineHeight": "1.2",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "body-md": [
+                            "16px",
+                            {
+                                "lineHeight": "1.6",
+                                "fontWeight": "400"
+                            }
+                        ]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        .neo-shadow {
+            box-shadow: 4px 4px 0px 0px #1A1A1A;
+        }
+
+        .neo-shadow-hover:hover {
+            box-shadow: 6px 6px 0px 0px #1A1A1A;
+            transform: translate(-2px, -2px);
+        }
+
+        .neo-shadow-active:active {
+            box-shadow: 0px 0px 0px 0px #1A1A1A;
+            transform: translate(4px, 4px);
+        }
+
+        .upload-dashed-border {
+            border: 4px dashed #1A1A1A;
+        }
+
+        @keyframes subtle-float {
+            0% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-10px);
+            }
+
+            100% {
+                transform: translateY(0px);
+            }
+        }
+
+        .animate-float {
+            animation: subtle-float 3s ease-in-out infinite;
+        }
+
+        @keyframes progress-fill {
+            from {
+                width: 0%;
+            }
+
+            to {
+                width: 65%;
+            }
+        }
+
+        .animate-progress {
+            animation: progress-fill 2s ease-out forwards;
+        }
+    </style>
+</head>
+
+<body class="bg-background min-h-screen text-on-surface font-body-lg flex">
+    <!-- SideNavBar -->
+    <nav
+        class="hidden lg:flex flex-col fixed left-0 top-0 h-full p-base space-y-4 w-64 bg-surface-white border-r-3 border-border-ink z-40">
+        <div class="mb-8 mt-4 px-4 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full border-3 border-border-ink bg-surface-container overflow-hidden">
+                <img alt="User Avatar" class="w-full h-full object-cover"
+                    data-alt="A stylized portrait photo of a user avatar, featuring high contrast and a slightly desaturated color palette to fit a neo-brutalist aesthetic."
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjPNieibWJ5miMpI9p4BtL32r1HJDq5xNHlonwD3vMcOUj5PQIX2djj2IGf0eiaZWXFIz3rrliLZxhdRxaGhICclohkVfgJPNQK3Zezpo89zpIYXlBpxXuULI7xPf8xJJRuzZiQqHSMF5UpgyTWoQtksyginiB9tPNLzvkexnHW-upOKhsxyxyo0oRuHkx4VQHb4G42X7__L4iNTPhQtriLUZwrk0vKz6rKh3jQHBqFFFwwBWSeCYrCTtsRz4qJFk07diNVpHw8MI" />
+            </div>
+            <div>
+                <h1 class="text-headline-sm font-headline-sm font-bold text-on-surface">Creator Studio</h1>
+                <p class="text-label-mono font-label-mono text-on-surface-variant">Localization Hub</p>
+            </div>
+        </div>
+        <button
+            class="w-full mb-6 bg-primary text-on-primary py-3 px-4 rounded border-3 border-border-ink neo-shadow font-label-mono text-label-mono neo-shadow-hover neo-shadow-active transition-all">
+            New Project
+        </button>
+        <div class="flex-1 space-y-2">
+            <a class="flex items-center gap-3 px-4 py-3 rounded text-on-surface font-label-mono text-label-mono hover:bg-surface-container-high hover:translate-x-1 transition-transform"
+                href="#">
+                <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">home</span>
+                Home
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 rounded bg-secondary-container text-on-secondary-container border-3 border-border-ink shadow-[4px_4px_0px_0px_#1A1A1A] font-label-mono text-label-mono active:scale-95 transition-all"
+                href="#">
+                <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">video_library</span>
+                Projects
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 rounded text-on-surface font-label-mono text-label-mono hover:bg-surface-container-high hover:translate-x-1 transition-transform"
+                href="#">
+                <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">analytics</span>
+                Reports
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 rounded text-on-surface font-label-mono text-label-mono hover:bg-surface-container-high hover:translate-x-1 transition-transform"
+                href="#">
+                <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+                Settings
+            </a>
+        </div>
+        <div class="mt-auto space-y-2 border-t-3 border-border-ink pt-4">
+            <a class="flex items-center gap-3 px-4 py-3 rounded text-on-surface font-label-mono text-label-mono hover:bg-surface-container-high hover:translate-x-1 transition-transform"
+                href="#">
+                <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">help</span>
+                Help
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 rounded text-on-surface font-label-mono text-label-mono hover:bg-surface-container-high hover:translate-x-1 transition-transform"
+                href="#">
+                <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">logout</span>
+                Logout
+            </a>
+        </div>
+    </nav>
+    <!-- TopNavBar (Mobile Only) -->
+    <nav
+        class="lg:hidden fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-mobile h-20 bg-surface-white border-b-3 border-border-ink shadow-sm">
+        <h1 class="text-headline-sm font-headline-sm font-bold text-on-surface">Creator Studio</h1>
+        <button
+            class="p-2 border-3 border-border-ink rounded bg-surface-container neo-shadow active:translate-y-[2px] transition-transform">
+            <span class="material-symbols-outlined">menu</span>
+        </button>
+    </nav>
+    <!-- Main Content Canvas -->
+    <main class="flex-1 lg:ml-64 pt-24 lg:pt-8 p-margin-mobile md:p-margin-desktop min-h-screen">
+        <div class="max-w-5xl mx-auto space-y-12">
+            <!-- Header Section -->
+            <header>
+                <h2
+                    class="text-headline-lg-mobile md:text-headline-lg font-headline-lg-mobile md:font-headline-lg text-on-surface mb-2">
+                    Localize your videos for <span class="text-primary">Bharat</span>
+                </h2>
+                <p class="text-body-lg font-body-lg text-on-surface-variant max-w-2xl">
+                    Drop your master video file, select target languages, and let Nativity.ai handle the cultural
+                    translation, dubbing, and lip-syncing.
+                </p>
+            </header>
+            <!-- Main Layout Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <!-- Left Column: Upload & Config -->
+                <div class="lg:col-span-8 space-y-8">
+                    <!-- Language Selection Card -->
+                    <div class="bg-surface-white border-3 border-border-ink p-6 rounded-lg neo-shadow">
+                        <h3 class="text-headline-sm font-headline-sm text-on-surface mb-4">Target Languages</h3>
+                        <div class="flex flex-wrap gap-4">
+                            <!-- Selected Pill -->
+                            <button
+                                class="px-6 py-2 rounded-full border-3 border-border-ink bg-secondary text-on-secondary font-label-mono text-label-mono neo-shadow transform -translate-y-1 transition-all">
+                                Hindi
+                            </button>
+                            <!-- Unselected Pills -->
+                            <button
+                                class="px-6 py-2 rounded-full border-3 border-border-ink bg-surface-container hover:bg-surface-container-high text-on-surface font-label-mono text-label-mono hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#1A1A1A] transition-all">
+                                Tamil
+                            </button>
+                            <button
+                                class="px-6 py-2 rounded-full border-3 border-border-ink bg-surface-container hover:bg-surface-container-high text-on-surface font-label-mono text-label-mono hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#1A1A1A] transition-all">
+                                Bengali
+                            </button>
+                            <button
+                                class="px-6 py-2 rounded-full border-3 border-border-ink bg-surface-container hover:bg-surface-container-high text-on-surface font-label-mono text-label-mono hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#1A1A1A] transition-all">
+                                Telugu
+                            </button>
+                            <button
+                                class="px-6 py-2 rounded-full border-3 border-border-ink bg-surface-container hover:bg-surface-container-high text-on-surface font-label-mono text-label-mono hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#1A1A1A] transition-all">
+                                Marathi
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Upload Zone (IDLE) -->
+                    <div class="relative group cursor-pointer">
+                        <div
+                            class="absolute inset-0 bg-tertiary-fixed rounded-lg transform translate-x-2 translate-y-2 border-3 border-border-ink hidden group-hover:block transition-all">
+                        </div>
+                        <div
+                            class="upload-dashed-border bg-tertiary-fixed rounded-lg p-12 flex flex-col items-center justify-center text-center relative z-10 bg-white transition-transform group-hover:-translate-x-1 group-hover:-translate-y-1">
+                            <span class="material-symbols-outlined text-6xl text-secondary mb-4 animate-float"
+                                style="font-size: 80px;">movie</span>
+                            <h3 class="text-headline-sm font-headline-sm text-on-surface mb-2">Drop your video here</h3>
+                            <p class="text-body-md font-body-md text-on-surface-variant mb-6">MP4, MOV, or WEBM. Up to
+                                2GB.</p>
+                            <button
+                                class="px-6 py-3 border-3 border-border-ink rounded bg-surface-white text-on-surface font-label-mono text-label-mono hover:bg-surface-container-high transition-colors">
+                                Browse Files
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Start Button CTA -->
+                    <div class="flex justify-end pt-4">
+                        <button
+                            class="group relative px-8 py-4 bg-primary border-3 border-border-ink rounded text-on-primary font-headline-sm text-headline-sm neo-shadow transform rotate-[-1deg] neo-shadow-hover neo-shadow-active transition-all flex items-center gap-2">
+                            ✨ Start Localization <span
+                                class="material-symbols-outlined group-hover:translate-x-2 transition-transform">arrow_forward</span>
+                        </button>
+                    </div>
+                </div>
+                <!-- Right Column: Processing Status (Demonstrating Secondary States) -->
+                <div class="lg:col-span-4 space-y-6">
+                    <!-- Upload Progress Card -->
+                    <div
+                        class="bg-surface-white border-3 border-border-ink p-6 rounded-lg neo-shadow relative overflow-hidden">
+                        <div class="flex justify-between items-end mb-4">
+                            <h4 class="text-label-mono font-label-mono text-on-surface uppercase tracking-wider">
+                                Uploading</h4>
+                            <span class="text-headline-sm font-headline-sm text-primary">65%</span>
+                        </div>
+                        <!-- Progress Bar -->
+                        <div
+                            class="h-6 w-full bg-surface-container-high border-3 border-border-ink rounded-full overflow-hidden">
+                            <div class="h-full bg-warning-mango border-r-3 border-border-ink animate-progress w-[65%]">
+                            </div>
+                        </div>
+                        <p class="text-body-md font-body-md text-on-surface-variant mt-2 text-right">master_v2_final.mp4
+                        </p>
+                    </div>
+                    <!-- Processing Checklist Card -->
+                    <div class="bg-surface-alt-lavender border-3 border-border-ink p-6 rounded-lg neo-shadow">
+                        <h4 class="text-headline-sm font-headline-sm text-on-surface mb-6 flex items-center gap-2">
+                            <span class="material-symbols-outlined animate-spin text-secondary">sync</span> Processing
+                            Status
+                        </h4>
+                        <div class="space-y-4">
+                            <!-- Step 1: Complete -->
+                            <div class="flex items-center gap-4 opacity-50">
+                                <div
+                                    class="w-8 h-8 rounded border-3 border-border-ink bg-success-lime flex items-center justify-center">
+                                    <span class="material-symbols-outlined text-sm">check</span>
+                                </div>
+                                <span class="font-label-mono text-label-mono text-on-surface line-through">Analyzing
+                                    Audio</span>
+                            </div>
+                            <!-- Step 2: Active -->
+                            <div
+                                class="flex items-center gap-4 p-2 -ml-2 bg-surface-white border-3 border-border-ink rounded shadow-[2px_2px_0px_0px_#1A1A1A]">
+                                <div
+                                    class="w-8 h-8 rounded border-3 border-border-ink bg-warning-mango flex items-center justify-center animate-pulse">
+                                    <span class="material-symbols-outlined text-sm">psychology</span>
+                                </div>
+                                <span class="font-label-mono text-label-mono text-on-surface font-bold">Cultural
+                                    Adaptation</span>
+                            </div>
+                            <!-- Step 3: Pending -->
+                            <div class="flex items-center gap-4 opacity-50">
+                                <div
+                                    class="w-8 h-8 rounded border-3 border-border-ink bg-surface-container flex items-center justify-center">
+                                    <span class="material-symbols-outlined text-sm">graphic_eq</span>
+                                </div>
+                                <span class="font-label-mono text-label-mono text-on-surface">Audio Generation</span>
+                            </div>
+                            <!-- Step 4: Pending -->
+                            <div class="flex items-center gap-4 opacity-50">
+                                <div
+                                    class="w-8 h-8 rounded border-3 border-border-ink bg-surface-container flex items-center justify-center">
+                                    <span class="material-symbols-outlined text-sm">movie_edit</span>
+                                </div>
+                                <span class="font-label-mono text-label-mono text-on-surface">Video Stitching</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+
+</html>

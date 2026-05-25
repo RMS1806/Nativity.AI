@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
-import { Sparkles, ArrowRight, RefreshCw, LayoutDashboard, Play, Globe, Mic, Zap, Terminal } from 'lucide-react';
+import { Sparkles, ArrowRight, RefreshCw, LayoutDashboard, Play, Globe, Mic, Zap, Search } from 'lucide-react';
 import { SignInButton, SignedIn, SignedOut, UserButton, useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
 
@@ -20,30 +20,29 @@ import {
 } from '@/lib/api';
 import { AppState, Language, LocalizationJob, JobStatus } from '@/types';
 
-// ─── Neon Glow Button ────────────────────────────────────────────────
-function GlowButton({ children, onClick, className = '', href }: {
+// ─── Neo Brutal Button ────────────────────────────────────────────────
+function NeoButton({ children, onClick, className = '', href, variant = 'primary' }: {
   children: React.ReactNode;
   onClick?: () => void;
   className?: string;
   href?: string;
+  variant?: 'primary' | 'secondary' | 'outline';
 }) {
+  const baseClasses = 'relative overflow-hidden px-8 py-4 text-lg font-bold neo-border neo-shadow neo-shadow-hover neo-shadow-active transition-all duration-200 font-headline flex items-center gap-3';
+  const variantClasses = {
+    primary: 'bg-[#ba061b] text-white',
+    secondary: 'bg-[#8127cf] text-white',
+    outline: 'bg-white text-[#1A1A1A]',
+  };
+
   const buttonContent = (
     <motion.button
       onClick={onClick}
-      whileHover={{ scale: 1.05, boxShadow: '0 0 50px rgba(0, 229, 255, 0.4)' }}
-      whileTap={{ scale: 0.97 }}
-      className={`relative overflow-hidden group px-8 py-4 text-white text-lg font-bold rounded-xl transition-all duration-300 ${className}`}
-      style={{
-        background: 'linear-gradient(135deg, #00E5FF 0%, #9000FF 50%, #FF00FF 100%)',
-        boxShadow: '0 0 30px rgba(0, 229, 255, 0.25)',
-      }}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      className={`${baseClasses} ${variantClasses[variant]} ${className}`}
     >
-      {/* Shimmer */}
-      <span
-        className="shimmer-overlay rounded-xl"
-        style={{ animationDuration: '2.5s' }}
-      />
-      <span className="relative z-10 flex items-center gap-3">{children}</span>
+      {children}
     </motion.button>
   );
 
@@ -70,9 +69,9 @@ function HeroSection() {
   };
 
   const features = [
-    { icon: Play, label: 'Video Analysis', color: '#00E5FF' },
-    { icon: Globe, label: 'Cultural Adaptation', color: '#FF00FF' },
-    { icon: Mic, label: 'Natural TTS', color: '#CCFF00' },
+    { icon: Search, label: 'Video Analysis', color: '#BFFF00' },
+    { icon: Globe, label: 'Cultural Adaptation', color: '#FBBF24' },
+    { icon: Mic, label: 'Natural TTS', color: '#FF2D78' },
   ];
 
   return (
@@ -83,17 +82,12 @@ function HeroSection() {
           initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.05, duration: 0.5 }}
-          className="inline-flex items-center gap-2 px-4 py-2 mb-8 rounded-lg"
-          style={{
-            background: 'rgba(255,255,255,0.05)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(0,229,255,0.2)',
-          }}
+          className="inline-flex items-center gap-2 px-4 py-2 mb-8 neo-border neo-shadow bg-[#F3EDFF]"
+          style={{ borderRadius: '9999px' }}
         >
-          <Terminal className="w-4 h-4" style={{ color: '#00E5FF' }} />
-          <span className="text-sm font-mono text-gray-300">
-            <span style={{ color: '#00E5FF' }}>$</span> powered_by{' '}
-            <span style={{ color: '#FF00FF' }}>Gemini AI</span>
+          <span className="text-xl">⚡</span>
+          <span className="font-mono-label text-[#8127cf] font-bold">
+            Powered by Gemini AI
           </span>
         </motion.div>
 
@@ -101,67 +95,80 @@ function HeroSection() {
           variants={containerVariants}
           initial="hidden"
           animate="show"
-          className="space-y-4"
+          className="space-y-6"
         >
           {/* Headline */}
           <motion.h1
             variants={itemVariants}
-            className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-tight"
+            className="text-4xl sm:text-5xl lg:text-[64px] font-bold leading-tight font-headline"
+            style={{ letterSpacing: '-0.02em' }}
           >
-            <span className="text-white">Hyper-localize your</span>
-            <br />
-            <span className="neon-text-gradient">videos for Bharat</span>
+            <span className="text-[#1A1A1A]">Hyper-localize your videos for </span>
+            <span
+              className="text-[#ba061b] inline-block bg-white px-3 neo-border neo-shadow"
+              style={{ transform: 'rotate(-2deg)' }}
+            >
+              Bharat
+            </span>
           </motion.h1>
 
           {/* Subhead */}
           <motion.p
             variants={itemVariants}
-            className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto"
+            className="text-lg text-[#5c403d] mb-10 max-w-2xl mx-auto"
           >
-            AI-powered dubbing in{' '}
-            <span className="text-white font-semibold">Hindi</span>,{' '}
-            <span className="text-white font-semibold">Tamil</span>, and{' '}
-            <span className="text-white font-semibold">Bengali</span>.
+            Break language barriers with raw, authentic video translation. Neo-brutal accuracy meets cultural nuance for the next billion users.
           </motion.p>
 
           {/* CTA */}
-          <motion.div variants={itemVariants}>
+          <motion.div variants={itemVariants} className="pt-4">
             <SignInButton mode="modal">
-              <GlowButton>
-                <Zap className="w-5 h-5" />
+              <motion.button
+                whileHover={{ rotate: 0, y: -2, x: -2 }}
+                whileTap={{ y: 4, x: 4 }}
+                className="inline-flex items-center gap-2 px-8 py-4 bg-[#ba061b] text-white font-bold text-xl neo-border font-headline"
+                style={{
+                  transform: 'rotate(-1deg)',
+                  boxShadow: '4px 4px 0px 0px #1A1A1A',
+                  transition: 'all 0.2s ease',
+                }}
+              >
                 Get Started
                 <ArrowRight className="w-5 h-5" />
-              </GlowButton>
+              </motion.button>
             </SignInButton>
           </motion.div>
         </motion.div>
 
         {/* Feature Cards */}
-        <div className="flex flex-wrap justify-center gap-4 mt-16">
-          {features.map((feature, index) => (
-            <motion.div
-              key={feature.label}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 + index * 0.12, duration: 0.5 }}
-              whileHover={{ scale: 1.06, y: -3 }}
-              className="flex items-center gap-3 px-5 py-3 rounded-xl cursor-default"
-              style={{
-                background: 'rgba(255,255,255,0.05)',
-                backdropFilter: 'blur(12px)',
-                border: `1px solid rgba(255,255,255,0.08)`,
-                transition: 'border-color 0.3s',
-              }}
-            >
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center"
-                style={{ background: `${feature.color}18` }}
+        <div className="flex flex-wrap justify-center gap-6 mt-20">
+          {features.map((feature, index) => {
+            const rotations = [1, -2, 2];
+            return (
+              <motion.div
+                key={feature.label}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 + index * 0.12, duration: 0.5 }}
+                whileHover={{ rotate: 0, y: -8 }}
+                className="bg-white neo-border neo-shadow p-8 flex flex-col items-start gap-4 w-64 cursor-default"
+                style={{ transform: `rotate(${rotations[index]}deg)`, transition: 'transform 0.3s, box-shadow 0.3s' }}
               >
-                <feature.icon className="w-4 h-4" style={{ color: feature.color }} />
-              </div>
-              <span className="text-sm text-gray-300 font-medium">{feature.label}</span>
-            </motion.div>
-          ))}
+                <div
+                  className="w-12 h-12 neo-border neo-shadow flex items-center justify-center"
+                  style={{ backgroundColor: feature.color }}
+                >
+                  <feature.icon className="w-5 h-5 text-[#1A1A1A]" />
+                </div>
+                <span className="text-xl font-bold font-headline text-[#1A1A1A]">{feature.label}</span>
+                <p className="text-sm text-[#5c403d]">
+                  {index === 0 && 'Deep context extraction beyond literal translation. We analyze slang, tone, and pacing.'}
+                  {index === 1 && 'Rewrite scripts to resonate with local idioms and cultural references.'}
+                  {index === 2 && 'Hyper-realistic voice synthesis that matches the original speaker\'s emotion.'}
+                </p>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -264,29 +271,28 @@ export default function Home() {
 
   return (
     <main className="min-h-screen flex flex-col">
-      {/* ── Floating Glass Navbar ─────────────────────────────── */}
-      <div className="sticky top-0 z-50 pt-4 px-4 pointer-events-none">
+      {/* ── Neo Brutal Navbar ─────────────────────────────── */}
+      <div className="sticky top-0 z-50">
         <nav
-          className="max-w-5xl mx-auto flex items-center justify-between px-6 py-3 rounded-full pointer-events-auto"
+          className="flex items-center justify-between px-4 md:px-10 h-20 bg-white"
           style={{
-            background: 'rgba(255,255,255,0.05)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            borderBottom: '3px solid #1A1A1A',
           }}
         >
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
+          <Link href="/" className="flex items-center gap-3 group">
             <motion.div
-              whileHover={{ rotate: 180, scale: 1.1 }}
+              whileHover={{ rotate: 12, scale: 1.1 }}
               transition={{ duration: 0.3 }}
-              className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ background: 'linear-gradient(135deg, #00E5FF, #FF00FF)' }}
+              className="w-10 h-10 flex items-center justify-center neo-border"
+              style={{
+                backgroundColor: '#ba061b',
+                boxShadow: '4px 4px 0px 0px #1A1A1A',
+              }}
             >
-              <Zap className="w-4 h-4 text-black" />
+              <Zap className="w-5 h-5 text-white" />
             </motion.div>
-            <span className="text-xl font-bold neon-text-gradient">
+            <span className="text-xl font-bold font-headline text-[#1A1A1A] tracking-tight">
               Nativity.ai
             </span>
           </Link>
@@ -296,11 +302,11 @@ export default function Home() {
             <SignedIn>
               {appState !== 'IDLE' && (
                 <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ y: -2, x: -2 }}
+                  whileTap={{ y: 2, x: 2 }}
                   onClick={handleReset}
-                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 hover:text-white rounded-full transition-all"
-                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  className="flex items-center gap-2 px-4 py-2 font-mono-label text-[#1A1A1A] neo-border bg-white transition-all"
+                  style={{ boxShadow: '3px 3px 0px 0px #1A1A1A' }}
                 >
                   <RefreshCw className="w-4 h-4" />
                   Start Over
@@ -308,10 +314,10 @@ export default function Home() {
               )}
               <Link href="/dashboard">
                 <motion.div
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-400 hover:text-white rounded-full transition-all"
-                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  whileHover={{ y: -2, x: -2 }}
+                  whileTap={{ y: 2, x: 2 }}
+                  className="flex items-center gap-2 px-4 py-2 font-mono-label text-[#1A1A1A] neo-border bg-white transition-all"
+                  style={{ boxShadow: '3px 3px 0px 0px #1A1A1A' }}
                 >
                   <LayoutDashboard className="w-4 h-4" />
                   Dashboard
@@ -323,10 +329,13 @@ export default function Home() {
             <SignedOut>
               <SignInButton mode="modal">
                 <motion.button
-                  whileHover={{ scale: 1.05, boxShadow: '0 0 25px rgba(0,229,255,0.4)' }}
-                  whileTap={{ scale: 0.95 }}
-                  className="px-5 py-2 text-sm font-bold text-black rounded-full transition-all"
-                  style={{ background: 'linear-gradient(135deg, #00E5FF, #FF00FF)' }}
+                  whileHover={{ y: -2, x: -2 }}
+                  whileTap={{ y: 2, x: 2 }}
+                  className="px-6 py-2 font-mono-label font-bold text-white neo-border transition-all"
+                  style={{
+                    backgroundColor: '#8127cf',
+                    boxShadow: '4px 4px 0px 0px #1A1A1A',
+                  }}
                 >
                   Sign In
                 </motion.button>
@@ -336,7 +345,7 @@ export default function Home() {
         </nav>
       </div>
 
-      {/* ── Main Content ──────────────────────────────────────── */}
+      {/* ── Main Content ──────────────────────────────────── */}
       <div className="flex-1 max-w-6xl mx-auto w-full px-6 py-8">
         <SignedOut>
           <HeroSection />
@@ -353,17 +362,17 @@ export default function Home() {
                 className="space-y-8"
               >
                 <div className="text-center max-w-2xl mx-auto">
-                  <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+                  <h2 className="text-3xl sm:text-4xl font-bold text-[#1A1A1A] mb-4 font-headline">
                     Localize your videos for{' '}
-                    <span className="neon-text-gradient">Bharat</span>
+                    <span className="text-[#ba061b]">Bharat</span>
                   </h2>
-                  <p className="text-lg text-gray-400">
+                  <p className="text-lg text-[#5c403d]">
                     Transform English content into culturally-adapted regional languages
                   </p>
                 </div>
 
-                <div className="max-w-xs mx-auto">
-                  <label className="block text-sm font-medium text-gray-400 mb-2 text-center">
+                <div className="max-w-lg mx-auto">
+                  <label className="block font-mono-label text-[#5c403d] mb-3 text-center uppercase tracking-wider">
                     Target Language
                   </label>
                   <LanguageSelector
@@ -385,11 +394,21 @@ export default function Home() {
                     animate={{ opacity: 1, scale: 1 }}
                     className="flex justify-center"
                   >
-                    <GlowButton onClick={handleStartProcessing}>
+                    <motion.button
+                      onClick={handleStartProcessing}
+                      whileHover={{ rotate: 0, y: -2, x: -2 }}
+                      whileTap={{ y: 4, x: 4 }}
+                      className="inline-flex items-center gap-2 px-8 py-4 bg-[#ba061b] text-white font-bold text-xl neo-border font-headline"
+                      style={{
+                        transform: 'rotate(-1deg)',
+                        boxShadow: '4px 4px 0px 0px #1A1A1A',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
                       <Sparkles className="w-5 h-5" />
                       Start Localization
                       <ArrowRight className="w-5 h-5" />
-                    </GlowButton>
+                    </motion.button>
                   </motion.div>
                 )}
               </motion.div>
@@ -421,22 +440,25 @@ export default function Home() {
                 className="text-center max-w-md mx-auto"
               >
                 <div
-                  className="rounded-2xl p-8 space-y-4"
-                  style={{
-                    background: 'rgba(255,0,0,0.05)',
-                    border: '1px solid rgba(255,60,60,0.3)',
-                    backdropFilter: 'blur(12px)',
-                  }}
+                  className="neo-border neo-shadow-lg p-8 space-y-4 bg-white"
                 >
                   <div
-                    className="w-20 h-20 mx-auto rounded-full flex items-center justify-center"
-                    style={{ background: 'rgba(255,60,60,0.1)', border: '1px solid rgba(255,60,60,0.3)' }}
+                    className="w-20 h-20 mx-auto neo-border neo-shadow flex items-center justify-center"
+                    style={{ backgroundColor: '#FF2D78' }}
                   >
                     <span className="text-4xl">😞</span>
                   </div>
-                  <h2 className="text-2xl font-bold text-white">Something went wrong</h2>
-                  <p className="text-gray-400">{error}</p>
-                  <GlowButton onClick={handleReset}>Try Again</GlowButton>
+                  <h2 className="text-2xl font-bold text-[#1A1A1A] font-headline">Something went wrong</h2>
+                  <p className="text-[#5c403d]">{error}</p>
+                  <motion.button
+                    onClick={handleReset}
+                    whileHover={{ y: -2, x: -2 }}
+                    whileTap={{ y: 2, x: 2 }}
+                    className="px-6 py-3 bg-[#ba061b] text-white font-bold neo-border font-mono-label uppercase tracking-wider"
+                    style={{ boxShadow: '4px 4px 0px 0px #1A1A1A' }}
+                  >
+                    Try Again
+                  </motion.button>
                 </div>
               </motion.div>
             )}
@@ -444,15 +466,27 @@ export default function Home() {
         </SignedIn>
       </div>
 
-      {/* ── Footer ──────────────────────────────────────────────── */}
-      <footer style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} className="mt-auto">
-        <div className="max-w-6xl mx-auto px-6 py-8 text-center">
-          <p className="text-sm text-gray-600">
-            Built with ❤️ for Bharat • Powered by{' '}
-            <span style={{ color: '#00E5FF' }}>Gemini AI</span>{' '}
-            &{' '}
-            <span style={{ color: '#FF00FF' }}>AWS</span>
-          </p>
+      {/* ── Footer ──────────────────────────────────────────── */}
+      <footer
+        className="mt-auto"
+        style={{ borderTop: '3px solid #1A1A1A', backgroundColor: '#e8e1da' }}
+      >
+        <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="text-xl font-bold font-headline text-[#ba061b] flex items-center gap-2">
+            <Zap className="w-5 h-5" />
+            Nativity.ai
+          </div>
+          <div className="font-mono-label flex gap-6 text-[#5c403d]">
+            <a className="hover:text-[#ba061b] transition-colors hover:underline decoration-[3px] underline-offset-4" href="#">Privacy</a>
+            <a className="hover:text-[#ba061b] transition-colors hover:underline decoration-[3px] underline-offset-4" href="#">Terms</a>
+            <a className="hover:text-[#ba061b] transition-colors hover:underline decoration-[3px] underline-offset-4" href="#">Support</a>
+          </div>
+          <div
+            className="font-bold bg-white px-4 py-2 neo-border neo-shadow"
+            style={{ transform: 'rotate(-1deg)' }}
+          >
+            Built with ❤️ for Bharat
+          </div>
         </div>
       </footer>
     </main>

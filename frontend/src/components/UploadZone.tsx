@@ -62,43 +62,21 @@ export default function UploadZone({ onFileSelect, isUploading, uploadProgress }
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
-    // Determine state-driven styles
-    const borderColor = isDragging
-        ? '#FF00FF'
-        : selectedFile
-            ? 'rgba(204,255,0,0.5)'
-            : 'rgba(0,229,255,0.25)';
-
-    const boxShadow = isDragging
-        ? '0 0 60px rgba(255,0,255,0.35), inset 0 0 30px rgba(255,0,255,0.05)'
-        : selectedFile
-            ? '0 0 30px rgba(204,255,0,0.15)'
-            : 'none';
-
     return (
         <div className="w-full max-w-2xl mx-auto">
             <motion.div
-                className="relative rounded-2xl p-12 text-center cursor-pointer overflow-hidden"
+                className={`relative p-12 text-center cursor-pointer overflow-hidden transition-all duration-200 group ${isDragging ? 'neo-border' : 'upload-dashed-border'}`}
                 style={{
-                    background: 'rgba(255,255,255,0.04)',
-                    backdropFilter: 'blur(16px)',
-                    WebkitBackdropFilter: 'blur(16px)',
-                    border: `2px ${isDragging ? 'solid' : 'dashed'} ${borderColor}`,
-                    boxShadow,
-                    transition: 'border-color 0.25s, box-shadow 0.35s',
+                    backgroundColor: isDragging ? '#d8e2ff' : selectedFile ? '#F3EDFF' : '#FFFFFF',
+                    boxShadow: isDragging ? '4px 4px 0px 0px #1A1A1A' : 'none',
+                    borderRadius: '0.5rem',
                 }}
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 animate={isDragging ? { scale: 1.02 } : { scale: 1 }}
-                whileHover={!isUploading && !isDragging ? { scale: 1.01 } : {}}
-                whileTap={!isUploading ? { scale: 0.99 } : {}}
+                whileHover={!isUploading && !isDragging ? { x: -2, y: -2 } : {}}
             >
-                {/* Shimmer overlay */}
-                {!isDragging && !isUploading && (
-                    <span className="shimmer-overlay" style={{ opacity: 0.6 }} />
-                )}
-
                 <input
                     type="file"
                     accept="video/*"
@@ -108,7 +86,7 @@ export default function UploadZone({ onFileSelect, isUploading, uploadProgress }
                 />
 
                 <AnimatePresence mode="wait">
-                    {/* ── Uploading / AI Processing State ─────────────── */}
+                    {/* ── Uploading State ─────────────── */}
                     {isUploading ? (
                         <motion.div
                             key="uploading"
@@ -117,49 +95,44 @@ export default function UploadZone({ onFileSelect, isUploading, uploadProgress }
                             exit={{ opacity: 0, y: -10 }}
                             className="space-y-6"
                         >
-                            {/* Spinning conic-gradient border orb */}
                             <div className="flex flex-col items-center gap-4">
-                                <div
-                                    className="border-spin-wrapper w-20 h-20 mx-auto rounded-full"
-                                >
-                                    <div className="border-spin-inner w-full h-full rounded-full flex items-center justify-center">
-                                        <Upload
-                                            className="w-8 h-8"
-                                            style={{ color: '#00E5FF' }}
-                                        />
-                                    </div>
+                                <div className="w-20 h-20 mx-auto neo-border neo-shadow flex items-center justify-center bg-white animate-neo-spin">
+                                    <Upload className="w-8 h-8 text-[#8127cf]" />
                                 </div>
                                 <div>
-                                    <p className="text-lg font-bold text-white tracking-wide">
+                                    <p className="text-lg font-bold text-[#1A1A1A] font-headline tracking-wide">
                                         Uploading to Cloud
                                     </p>
-                                    <p className="text-sm text-gray-500 mt-1">{selectedFile?.name}</p>
+                                    <p className="text-sm text-[#5c403d] mt-1 font-mono-label">{selectedFile?.name}</p>
                                 </div>
                             </div>
 
-                            {/* Progress bar */}
-                            <div
-                                className="w-full max-w-xs mx-auto rounded-full h-2 overflow-hidden"
-                                style={{ background: 'rgba(255,255,255,0.08)' }}
-                            >
-                                <motion.div
-                                    className="h-full rounded-full"
-                                    style={{
-                                        background: 'linear-gradient(90deg, #00E5FF, #FF00FF)',
-                                        boxShadow: '0 0 12px rgba(0,229,255,0.6)',
-                                    }}
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${uploadProgress}%` }}
-                                    transition={{ duration: 0.3 }}
-                                />
+                            {/* Neo Brutal Progress Bar */}
+                            <div className="w-full max-w-xs mx-auto">
+                                <div className="flex justify-between items-end mb-2">
+                                    <span className="font-mono-label text-[#5c403d] uppercase tracking-wider text-xs">Uploading</span>
+                                    <span className="font-headline text-xl font-bold text-[#ba061b]">{uploadProgress}%</span>
+                                </div>
+                                <div
+                                    className="h-6 w-full neo-border overflow-hidden"
+                                    style={{ backgroundColor: '#eee7df', borderRadius: '9999px' }}
+                                >
+                                    <motion.div
+                                        className="h-full"
+                                        style={{
+                                            backgroundColor: '#FBBF24',
+                                            borderRight: uploadProgress > 0 && uploadProgress < 100 ? '3px solid #1A1A1A' : 'none',
+                                        }}
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${uploadProgress}%` }}
+                                        transition={{ duration: 0.3 }}
+                                    />
+                                </div>
                             </div>
-                            <p className="text-sm font-bold" style={{ color: '#00E5FF' }}>
-                                {uploadProgress}%
-                            </p>
                         </motion.div>
 
                     ) : selectedFile ? (
-                        /* ── File Selected State ─────────────────────────── */
+                        /* ── File Selected State ─────────── */
                         <motion.div
                             key="selected"
                             initial={{ opacity: 0, y: 10 }}
@@ -168,23 +141,20 @@ export default function UploadZone({ onFileSelect, isUploading, uploadProgress }
                             className="space-y-4"
                         >
                             <div
-                                className="w-16 h-16 mx-auto rounded-full flex items-center justify-center"
-                                style={{
-                                    background: 'rgba(204,255,0,0.08)',
-                                    border: '1px solid rgba(204,255,0,0.4)',
-                                }}
+                                className="w-16 h-16 mx-auto neo-border neo-shadow flex items-center justify-center"
+                                style={{ backgroundColor: '#BFFF00' }}
                             >
-                                <CheckCircle className="w-8 h-8" style={{ color: '#CCFF00' }} />
+                                <CheckCircle className="w-8 h-8 text-[#1A1A1A]" />
                             </div>
                             <div>
-                                <p className="text-lg font-bold text-white">Ready to process</p>
-                                <p className="text-sm text-gray-400 mt-1">{selectedFile.name}</p>
-                                <p className="text-xs text-gray-600 mt-0.5">{formatFileSize(selectedFile.size)}</p>
+                                <p className="text-lg font-bold text-[#1A1A1A] font-headline">Ready to process</p>
+                                <p className="text-sm text-[#5c403d] mt-1 font-mono-label">{selectedFile.name}</p>
+                                <p className="text-xs text-[#906f6c] mt-0.5 font-mono-label">{formatFileSize(selectedFile.size)}</p>
                             </div>
                         </motion.div>
 
                     ) : (
-                        /* ── Idle / Default State ────────────────────────── */
+                        /* ── Idle / Default State ──────────── */
                         <motion.div
                             key="idle"
                             initial={{ opacity: 0, y: 10 }}
@@ -192,28 +162,22 @@ export default function UploadZone({ onFileSelect, isUploading, uploadProgress }
                             exit={{ opacity: 0, y: -10 }}
                             className="space-y-4"
                         >
-                            <motion.div
-                                className="w-20 h-20 mx-auto rounded-full flex items-center justify-center float-y"
-                                style={{
-                                    background: 'rgba(0,229,255,0.08)',
-                                    border: '1px solid rgba(0,229,255,0.25)',
-                                }}
-                            >
-                                <Film className="w-10 h-10" style={{ color: '#00E5FF' }} />
-                            </motion.div>
+                            <div className="float-y">
+                                <Film className="w-20 h-20 mx-auto text-[#8127cf]" />
+                            </div>
                             <div>
-                                <p className="text-xl font-bold text-white">
+                                <p className="text-2xl font-bold text-[#1A1A1A] font-headline">
                                     {isDragging ? 'Drop it!' : 'Drop your video here'}
                                 </p>
-                                <p className="text-gray-400 mt-1">
+                                <p className="text-[#5c403d] mt-2">
                                     or{' '}
-                                    <span className="font-medium" style={{ color: '#00E5FF' }}>
+                                    <span className="font-bold text-[#0058be] underline decoration-[3px] underline-offset-4">
                                         browse
                                     </span>{' '}
                                     to upload
                                 </p>
                             </div>
-                            <p className="text-xs text-gray-600">MP4, MOV, WebM • Max 500MB</p>
+                            <p className="font-mono-label text-[#906f6c] text-xs">MP4, MOV, WebM • Max 500MB</p>
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -226,14 +190,11 @@ export default function UploadZone({ onFileSelect, isUploading, uploadProgress }
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className="mt-4 p-4 rounded-xl flex items-center gap-3"
-                        style={{
-                            background: 'rgba(255,60,60,0.08)',
-                            border: '1px solid rgba(255,60,60,0.3)',
-                        }}
+                        className="mt-4 p-4 neo-border flex items-center gap-3"
+                        style={{ backgroundColor: '#FF2D78', color: 'white' }}
                     >
-                        <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
-                        <p className="text-sm text-red-400">{error}</p>
+                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                        <p className="text-sm font-bold">{error}</p>
                     </motion.div>
                 )}
             </AnimatePresence>

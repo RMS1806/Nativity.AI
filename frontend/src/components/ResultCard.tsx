@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
     Download,
@@ -12,6 +13,8 @@ import {
     Share2
 } from 'lucide-react';
 import { LocalizationJob, CulturalReport } from '@/types';
+import { CulturalReportModal } from './CulturalReport';
+import { downloadSrt } from '@/lib/srt-utils';
 
 interface ResultCardProps {
     job: LocalizationJob;
@@ -20,177 +23,209 @@ interface ResultCardProps {
 export default function ResultCard({ job }: ResultCardProps) {
     const results = job.results;
     const culturalReport = results?.cultural_report;
+    const [isReportOpen, setIsReportOpen] = useState(false);
+
+    const handleDownloadSubtitles = () => {
+        if (results?.analysis?.segments) {
+            downloadSrt(results.analysis.segments, job.input_file.split('/').pop() || 'Video');
+        } else {
+            alert('Subtitles are not available for this video.');
+        }
+    };
 
     return (
-        <div className="w-full max-w-4xl mx-auto space-y-6">
-            {/* Success Header */}
-            <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-center"
-            >
+        <div className="w-full max-w-4xl mx-auto">
+            {/* Main Success Card */}
+            <div className="bg-white neo-border neo-shadow-lg p-6 md:p-10 flex flex-col gap-8">
+                {/* Success Header */}
                 <motion.div
-                    className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center"
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
-                >
-                    <CheckCircle2 className="w-10 h-10 text-white" />
-                </motion.div>
-                <h2 className="text-3xl font-bold text-gray-800">
-                    🎉 Localization Complete!
-                </h2>
-                <p className="text-gray-600 mt-2">
-                    Your video is now available in <span className="font-semibold text-blue-600 capitalize">{job.target_language}</span>
-                </p>
-            </motion.div>
-
-            {/* Video Player */}
-            {results?.output_url && (
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="rounded-2xl overflow-hidden shadow-xl bg-black"
+                    className="text-center space-y-4"
                 >
-                    <video
-                        src={results.output_url}
-                        controls
-                        className="w-full aspect-video"
-                        poster="/video-poster.jpg"
+                    <motion.div
+                        className="inline-flex items-center justify-center w-20 h-20 neo-border neo-shadow"
+                        style={{ backgroundColor: '#BFFF00', borderRadius: '9999px' }}
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
                     >
-                        Your browser does not support the video tag.
-                    </video>
+                        <CheckCircle2 className="w-10 h-10 text-[#1A1A1A]" />
+                    </motion.div>
+                    <h2 className="text-3xl md:text-5xl font-bold text-[#1A1A1A] font-headline">
+                        Localization Complete!
+                    </h2>
+                    <p className="text-lg text-[#5c403d] max-w-2xl mx-auto">
+                        Your video is now available in{' '}
+                        <span className="font-bold text-[#8127cf] capitalize">{job.target_language}</span>
+                    </p>
                 </motion.div>
-            )}
 
-            {/* Action Buttons */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="grid grid-cols-1 sm:grid-cols-2 gap-4"
-            >
-                {/* Download Full Version */}
+                {/* Video Player */}
                 {results?.output_url && (
-                    <a
-                        href={results.output_url}
-                        download
-                        className="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all duration-300 hover:scale-[1.02]"
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.3 }}
+                        className="relative w-full aspect-video neo-border neo-shadow overflow-hidden"
+                        style={{ backgroundColor: '#1A1A1A' }}
                     >
-                        <Download className="w-5 h-5" />
-                        Download Full Video
-                        {results.file_size_mb && (
-                            <span className="text-sm opacity-75">({results.file_size_mb.toFixed(1)} MB)</span>
-                        )}
-                    </a>
+                        <video
+                            src={results.output_url}
+                            controls
+                            className="w-full h-full"
+                            poster="/video-poster.jpg"
+                        >
+                            Your browser does not support the video tag.
+                        </video>
+                        {/* Language badge overlay */}
+                        <div
+                            className="absolute top-4 right-4 bg-white neo-border neo-shadow px-4 py-2 flex gap-2 z-10 pointer-events-none"
+                        >
+                            <span className="font-mono-label font-bold capitalize">{job.target_language}</span>
+                        </div>
+                    </motion.div>
                 )}
 
-                {/* Download WhatsApp Version */}
-                {results?.whatsapp_url && (
-                    <a
-                        href={results.whatsapp_url}
-                        download
-                        className="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all duration-300 hover:scale-[1.02]"
-                    >
-                        <Smartphone className="w-5 h-5" />
-                        WhatsApp Version
-                        <span className="text-sm opacity-75">(&lt;15 MB)</span>
-                    </a>
-                )}
-            </motion.div>
-
-            {/* Cultural Report Card */}
-            {culturalReport && (
+                {/* Action Buttons */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.5 }}
-                    className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl p-6 border border-purple-200"
+                    transition={{ delay: 0.4 }}
+                    className="grid grid-cols-1 md:grid-cols-3 gap-4"
                 >
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center">
-                            <Sparkles className="w-5 h-5 text-white" />
-                        </div>
-                        <div>
-                            <h3 className="font-bold text-gray-800">Cultural Adaptation Report</h3>
-                            <p className="text-sm text-gray-600">Powered by Gemini AI</p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                        {/* Quality Score */}
-                        <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-                            <div className="text-3xl font-bold text-purple-600">
-                                {culturalReport.localization_quality_score}/10
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">Quality Score</div>
-                        </div>
-
-                        {/* Idioms Adapted */}
-                        <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-                            <div className="text-3xl font-bold text-blue-600">
-                                {culturalReport.idioms_adapted}
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">Idioms Adapted</div>
-                        </div>
-
-                        {/* Cultural Notes */}
-                        <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-                            <div className="text-3xl font-bold text-green-600">
-                                {culturalReport.cultural_sensitivities?.length || 0}
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">Cultural Notes</div>
-                        </div>
-
-                        {/* Language */}
-                        <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-                            <Globe className="w-8 h-8 text-indigo-600 mx-auto" />
-                            <div className="text-xs text-gray-500 mt-2 capitalize">{job.target_language}</div>
-                        </div>
-                    </div>
-
-                    {/* Cultural Notes */}
-                    {culturalReport.notes && (
-                        <div className="bg-white rounded-xl p-4 shadow-sm">
-                            <div className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                                <MessageSquare className="w-4 h-4" />
-                                Gemini's Notes
-                            </div>
-                            <p className="text-gray-600 text-sm">{culturalReport.notes}</p>
-                        </div>
+                    {/* Download Full Version */}
+                    {results?.output_url && (
+                        <a
+                            href={results.output_url}
+                            download
+                            className="flex items-center justify-center gap-2 py-4 px-6 font-mono-label font-bold uppercase tracking-wider neo-border neo-shadow neo-shadow-hover neo-shadow-active transition-all duration-200 text-white"
+                            style={{ backgroundColor: '#0058be' }}
+                        >
+                            <Download className="w-5 h-5" />
+                            Download Full
+                            {results.file_size_mb && (
+                                <span className="text-xs opacity-75">({results.file_size_mb.toFixed(1)} MB)</span>
+                            )}
+                        </a>
                     )}
 
-                    {/* Cultural Sensitivities */}
-                    {culturalReport.cultural_sensitivities && culturalReport.cultural_sensitivities.length > 0 && (
-                        <div className="mt-4 space-y-2">
-                            <h4 className="text-sm font-medium text-gray-700">Cultural Observations</h4>
-                            {culturalReport.cultural_sensitivities.map((item, index) => (
-                                <div key={index} className="bg-white rounded-lg p-3 text-sm shadow-sm">
-                                    <div className="flex justify-between">
-                                        <span className="font-medium text-gray-800">{item.description}</span>
-                                        <span className="text-xs text-gray-400">{item.timestamp}</span>
-                                    </div>
-                                    <p className="text-gray-600 mt-1">{item.recommendation}</p>
-                                </div>
-                            ))}
-                        </div>
+                    {/* Download WhatsApp Version */}
+                    {results?.whatsapp_url && (
+                        <a
+                            href={results.whatsapp_url}
+                            download
+                            className="flex items-center justify-center gap-2 py-4 px-6 font-mono-label font-bold uppercase tracking-wider neo-border neo-shadow neo-shadow-hover neo-shadow-active transition-all duration-200 text-[#1A1A1A]"
+                            style={{ backgroundColor: '#BFFF00' }}
+                        >
+                            <Share2 className="w-5 h-5" />
+                            WhatsApp Version
+                        </a>
                     )}
+
+                    {/* Subtitles */}
+                    <button
+                        onClick={handleDownloadSubtitles}
+                        className="flex items-center justify-center gap-2 py-4 px-6 font-mono-label font-bold uppercase tracking-wider neo-border neo-shadow neo-shadow-hover neo-shadow-active transition-all duration-200 bg-white text-[#1A1A1A]"
+                    >
+                        <MessageSquare className="w-5 h-5" />
+                        Download Subtitles
+                    </button>
                 </motion.div>
-            )}
 
-            {/* Share Section */}
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.6 }}
-                className="text-center pt-4"
-            >
-                <button className="inline-flex items-center gap-2 text-gray-500 hover:text-blue-600 transition-colors">
-                    <Share2 className="w-4 h-4" />
-                    <span className="text-sm">Share your localized content</span>
-                </button>
-            </motion.div>
+                {/* Cultural Report Card */}
+                {culturalReport && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.5 }}
+                        className="neo-border neo-shadow p-6 flex flex-col sm:flex-row items-center justify-between gap-4"
+                        style={{ backgroundColor: '#F3EDFF' }}
+                    >
+                        <div className="flex items-center gap-4">
+                            <div
+                                className="w-12 h-12 neo-border neo-shadow flex items-center justify-center"
+                                style={{ backgroundColor: '#9c48ea' }}
+                            >
+                                <Sparkles className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                <h3 className="font-headline text-xl font-bold text-[#1A1A1A]">Cultural Insights Generated</h3>
+                                <p className="text-sm text-[#5c403d]">
+                                    Quality Score: <span className="font-bold text-[#8127cf]">{culturalReport.localization_quality_score}/10</span>
+                                    {' '} • {culturalReport.idioms_adapted} idioms adapted
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setIsReportOpen(true)}
+                            className="inline-block bg-[#ba061b] text-white neo-border py-3 px-6 font-mono-label font-bold uppercase tracking-wider neo-shadow neo-shadow-hover neo-shadow-active transition-all duration-200 whitespace-nowrap"
+                        >
+                            View Report
+                        </button>
+                    </motion.div>
+                )}
+
+                {/* Cultural Notes (if no report card, show raw notes) */}
+                {culturalReport?.notes && !culturalReport.localization_quality_score && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.5 }}
+                        className="neo-border neo-shadow p-6 bg-white"
+                    >
+                        <div className="flex items-center gap-2 font-mono-label text-[#5c403d] mb-3 uppercase tracking-wider text-xs">
+                            <MessageSquare className="w-4 h-4" />
+                            Gemini's Notes
+                        </div>
+                        <p className="text-[#1A1A1A]">{culturalReport.notes}</p>
+                    </motion.div>
+                )}
+
+                {/* Cultural Sensitivities */}
+                {culturalReport?.cultural_sensitivities && culturalReport.cultural_sensitivities.length > 0 && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.6 }}
+                        className="space-y-3"
+                    >
+                        <h4 className="font-mono-label text-[#5c403d] uppercase tracking-wider text-xs">Cultural Observations</h4>
+                        {culturalReport.cultural_sensitivities.map((item, index) => (
+                            <div key={index} className="neo-border p-4 bg-white" style={{ boxShadow: '2px 2px 0px 0px #1A1A1A' }}>
+                                <div className="flex justify-between">
+                                    <span className="font-bold text-[#1A1A1A]">{item.description}</span>
+                                    <span className="font-mono-label text-xs text-[#906f6c]">{item.timestamp}</span>
+                                </div>
+                                <p className="text-sm text-[#5c403d] mt-1">{item.recommendation}</p>
+                            </div>
+                        ))}
+                    </motion.div>
+                )}
+
+                {/* Start Another */}
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.7 }}
+                    className="text-center"
+                >
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="font-mono-label text-[#5c403d] hover:text-[#1A1A1A] underline decoration-[#1A1A1A]/30 hover:decoration-[#1A1A1A] decoration-2 underline-offset-4 transition-all duration-200"
+                    >
+                        Start Another Localization
+                    </button>
+                </motion.div>
+            </div>
+
+            {/* Cultural Report Modal */}
+            <CulturalReportModal
+                isOpen={isReportOpen}
+                onClose={() => setIsReportOpen(false)}
+                insights={(results?.analysis as any)?.cultural_analysis || []}
+                language={job.target_language}
+            />
         </div>
     );
 }
