@@ -114,10 +114,6 @@ resource "aws_cloudwatch_dashboard" "main" {
       }
     ]
   })
-  
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-cloudwatch-dashboard"
-  })
 }
 
 # Custom Metrics for Application Performance
@@ -257,45 +253,23 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx_errors" {
   tags = local.common_tags
 }
 
-# DynamoDB Throttling Alarms
-
-# Jobs Table Read Throttling
-resource "aws_cloudwatch_metric_alarm" "jobs_table_read_throttling" {
-  alarm_name          = "${local.name_prefix}-jobs-table-read-throttling"
+# DLQ Messages Alarm
+resource "aws_cloudwatch_metric_alarm" "video_processing_dlq_messages" {
+  alarm_name          = "${local.name_prefix}-dlq-messages"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
-  metric_name         = "ReadThrottledEvents"
-  namespace           = "AWS/DynamoDB"
+  metric_name         = "ApproximateNumberOfVisibleMessages"
+  namespace           = "AWS/SQS"
   period              = "300"
-  statistic           = "Sum"
+  statistic           = "Average"
   threshold           = "0"
-  alarm_description   = "This metric monitors DynamoDB read throttling"
+  alarm_description   = "This metric monitors DLQ message accumulation"
   alarm_actions       = [aws_sns_topic.alerts.arn]
-  
-  dimensions = {
-    TableName = aws_dynamodb_table.jobs.name
-  }
-  
-  tags = local.common_tags
-}
 
-# Jobs Table Write Throttling
-resource "aws_cloudwatch_metric_alarm" "jobs_table_write_throttling" {
-  alarm_name          = "${local.name_prefix}-jobs-table-write-throttling"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "1"
-  metric_name         = "WriteThrottledEvents"
-  namespace           = "AWS/DynamoDB"
-  period              = "300"
-  statistic           = "Sum"
-  threshold           = "0"
-  alarm_description   = "This metric monitors DynamoDB write throttling"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  
   dimensions = {
-    TableName = aws_dynamodb_table.jobs.name
+    QueueName = aws_sqs_queue.video_processing_dlq.name
   }
-  
+
   tags = local.common_tags
 }
 
@@ -330,18 +304,3 @@ resource "aws_cloudwatch_composite_alarm" "system_health" {
   tags = local.common_tags
 }
 
-# Outputs
-output "cloudwatch_dashboard_url" {
-  description = "URL of the CloudWatch dashboard"
-  value       = "https://${local.region}.console.aws.amazon.com/cloudwatch/home?region=${local.region}#dashboards:name=${aws_cloudwatch_dashboard.main.dashboard_name}"
-}
-
-output "sns_alerts_topic_arn" {
-  description = "ARN of the SNS alerts topic"
-  value       = aws_sns_topic.alerts.arn
-}
-
-output "sns_critical_alerts_topic_arn" {
-  description = "ARN of the SNS critical alerts topic"
-  value       = aws_sns_topic.critical_alerts.arn
-}

@@ -159,8 +159,8 @@ resource "aws_security_group" "alb" {
 }
 
 # Security Group for ECS Tasks
-resource "aws_security_group" "ecs_tasks" {
-  name_prefix = "${local.name_prefix}-ecs-tasks-"
+resource "aws_security_group" "ecs" {
+  name_prefix = "${local.name_prefix}-ecs-"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -187,7 +187,7 @@ resource "aws_security_group" "ecs_tasks" {
   }
 
   tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-ecs-tasks-sg"
+    Name = "${local.name_prefix}-ecs-sg"
   })
 
   lifecycle {
@@ -205,7 +205,7 @@ resource "aws_security_group" "redis" {
     from_port       = 6379
     to_port         = 6379
     protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
+    security_groups = [aws_security_group.ecs.id]
   }
 
   tags = merge(local.common_tags, {

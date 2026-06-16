@@ -130,10 +130,6 @@ resource "aws_appautoscaling_policy" "worker_queue_depth" {
       metric_name = "ApproximateNumberOfMessages"
       namespace   = "AWS/SQS"
       statistic   = "Average"
-      
-      dimensions = {
-        QueueName = aws_sqs_queue.video_processing.name
-      }
     }
     target_value       = 10.0  # Target 10 messages per worker
     scale_in_cooldown  = 600   # 10 minutes
@@ -149,7 +145,7 @@ resource "aws_appautoscaling_scheduled_action" "api_scale_up" {
   service_namespace  = aws_appautoscaling_target.api.service_namespace
   resource_id        = aws_appautoscaling_target.api.resource_id
   scalable_dimension = aws_appautoscaling_target.api.scalable_dimension
-  schedule           = "cron(0 9 * * MON-FRI)"  # 9 AM UTC, Monday to Friday
+  schedule           = "cron(0 9 ? * MON-FRI *)"  # 9 AM UTC, Monday to Friday
   
   scalable_target_action {
     min_capacity = var.api_autoscaling_min_capacity + 1
@@ -163,7 +159,7 @@ resource "aws_appautoscaling_scheduled_action" "api_scale_down" {
   service_namespace  = aws_appautoscaling_target.api.service_namespace
   resource_id        = aws_appautoscaling_target.api.resource_id
   scalable_dimension = aws_appautoscaling_target.api.scalable_dimension
-  schedule           = "cron(0 18 * * MON-FRI)"  # 6 PM UTC, Monday to Friday
+  schedule           = "cron(0 18 ? * MON-FRI *)"  # 6 PM UTC, Monday to Friday
   
   scalable_target_action {
     min_capacity = var.api_autoscaling_min_capacity
@@ -235,13 +231,3 @@ resource "aws_cloudwatch_metric_alarm" "queue_depth_high" {
   tags = local.common_tags
 }
 
-# Outputs
-output "api_autoscaling_target_arn" {
-  description = "ARN of the API auto scaling target"
-  value       = aws_appautoscaling_target.api.arn
-}
-
-output "worker_autoscaling_target_arn" {
-  description = "ARN of the worker auto scaling target"
-  value       = aws_appautoscaling_target.worker.arn
-}

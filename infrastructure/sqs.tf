@@ -33,9 +33,9 @@ resource "aws_sqs_queue" "video_processing" {
   })
 }
 
-# High Priority Queue for Draft Creation
-resource "aws_sqs_queue" "draft_processing" {
-  name = "${local.name_prefix}-draft-processing"
+# High Priority Queue
+resource "aws_sqs_queue" "high_priority" {
+  name = "${local.name_prefix}-high-priority"
 
   message_retention_seconds  = var.sqs_message_retention_period
   visibility_timeout_seconds = var.sqs_visibility_timeout
@@ -48,8 +48,28 @@ resource "aws_sqs_queue" "draft_processing" {
   })
 
   tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-draft-processing"
+    Name = "${local.name_prefix}-high-priority"
     Type = "HighPriorityQueue"
+  })
+}
+
+# Draft Creation Queue
+resource "aws_sqs_queue" "draft_creation" {
+  name = "${local.name_prefix}-draft-creation"
+
+  message_retention_seconds  = var.sqs_message_retention_period
+  visibility_timeout_seconds = var.sqs_visibility_timeout
+  receive_wait_time_seconds  = 20
+
+  # Dead Letter Queue configuration
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.video_processing_dlq.arn
+    maxReceiveCount     = 3
+  })
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-draft-creation"
+    Type = "DraftCreationQueue"
   })
 }
 

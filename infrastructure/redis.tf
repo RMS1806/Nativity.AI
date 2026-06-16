@@ -12,7 +12,7 @@ resource "aws_elasticache_subnet_group" "redis" {
 
 # Redis Parameter Group
 resource "aws_elasticache_parameter_group" "redis" {
-  family = "redis7.x"
+  family = "redis7"
   name   = "${local.name_prefix}-redis-params"
   
   # Optimize for job caching workload
@@ -82,7 +82,7 @@ resource "aws_elasticache_replication_group" "redis" {
 # Random password for Redis authentication
 resource "random_password" "redis_auth_token" {
   length  = 32
-  special = true
+  special = false
 }
 
 # CloudWatch Log Group for Redis slow queries
@@ -134,19 +134,3 @@ resource "aws_cloudwatch_metric_alarm" "redis_memory_utilization" {
   tags = local.common_tags
 }
 
-# Outputs
-output "redis_endpoint" {
-  description = "Redis cluster endpoint"
-  value       = aws_elasticache_replication_group.redis.configuration_endpoint_address
-}
-
-output "redis_port" {
-  description = "Redis cluster port"
-  value       = aws_elasticache_replication_group.redis.port
-}
-
-output "redis_auth_token" {
-  description = "Redis authentication token"
-  value       = random_password.redis_auth_token.result
-  sensitive   = true
-}

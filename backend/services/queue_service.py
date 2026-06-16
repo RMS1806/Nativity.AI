@@ -73,23 +73,18 @@ class QueueService:
             if self._is_aws_configured():
                 self._sqs_client = boto3.client(
                     'sqs',
-                    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
                     region_name=settings.AWS_REGION
                 )
                 
                 # Queue names based on environment
-                queue_name = "nativity-video-processing"
-                dlq_name = "nativity-video-processing-dlq"
-                
-                # Get or create queues
-                self._queue_url = self._get_or_create_queue(queue_name)
-                self._dlq_url = self._get_or_create_queue(dlq_name, is_dlq=True)
+                # Use Terraform-created queues
+                # Use Terraform-created queues
+                self._queue_url = settings.VIDEO_PROCESSING_QUEUE_URL
                 
                 if self._queue_url:
-                    print("✅ SQS queues configured successfully")
+                    print(f"✅ Using SQS queue: {self._queue_url}")
                 else:
-                    print("⚠️  SQS queue creation failed, using local queue")
+                    print("⚠️ VIDEO_PROCESSING_QUEUE_URL not configured")
             else:
                 print("⚠️  AWS not configured, using local in-memory queue")
                 
@@ -98,12 +93,7 @@ class QueueService:
             print("   Falling back to local in-memory queue")
     
     def _is_aws_configured(self) -> bool:
-        """Check if AWS credentials are available"""
-        return bool(
-            settings.AWS_ACCESS_KEY_ID and 
-            settings.AWS_SECRET_ACCESS_KEY and 
-            settings.AWS_REGION
-        )
+        return bool(settings.AWS_REGION)
     
     def _get_or_create_queue(self, queue_name: str, is_dlq: bool = False) -> Optional[str]:
         """Get existing queue URL or create new queue"""
@@ -283,8 +273,17 @@ class QueueService:
             message = messages[0]
             job_data = json.loads(message['Body'])
             
-            # Convert back to QueueJob
-            job = QueueJob(**job_data)
+            # Handle Lambda-generated messages
+            if 'jobId' in job_data:
+                job = QueueJob(
+                    job_id=job_data['jobId'],
+                    job_type=job_data.get('jobType', 'video_processing'),
+                    user_id=job_data.get('userId', 'unknown'),
+                    payload=job_data
+                )
+            else:
+                # Handle QueueJob-formatted messages
+                job = QueueJob(**job_data)
             
             # Store receipt handle for deletion
             job.receipt_handle = message['ReceiptHandle']

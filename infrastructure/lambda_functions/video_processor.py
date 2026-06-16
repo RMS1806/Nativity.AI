@@ -255,14 +255,18 @@ def create_job_record(user_id: str, video_url: str, job_type: str) -> str:
     
     jobs_table = dynamodb.Table(JOBS_TABLE_NAME)
     
+    timestamp = datetime.utcnow().isoformat()
+
     job_item = {
-        'jobId': job_id,
-        'userId': user_id,
-        'videoUrl': video_url,
-        'jobType': job_type,
+        'job_id': job_id,
+        'created_at': timestamp,
+    
+        'user_id': user_id,
+        'video_url': video_url,
+        'job_type': job_type,
+    
         'status': 'pending',
-        'createdAt': datetime.utcnow().isoformat(),
-        'updatedAt': datetime.utcnow().isoformat()
+        'updated_at': timestamp
     }
     
     jobs_table.put_item(Item=job_item)

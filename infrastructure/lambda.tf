@@ -46,8 +46,8 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "s3:GetObjectVersion"
         ]
         Resource = [
-          "${aws_s3_bucket.video_storage.arn}",
-          "${aws_s3_bucket.video_storage.arn}/*"
+          "${aws_s3_bucket.storage.arn}",
+          "${aws_s3_bucket.storage.arn}/*"
         ]
       },
       {
@@ -60,7 +60,12 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        Resource = aws_dynamodb_table.nativity_production.arn
+        Resource = [
+          aws_dynamodb_table.jobs.arn,
+          aws_dynamodb_table.users.arn,
+          "${aws_dynamodb_table.jobs.arn}/index/*",
+          "${aws_dynamodb_table.users.arn}/index/*"
+        ]
       },
       {
         Effect = "Allow"
@@ -124,14 +129,14 @@ resource "aws_lambda_function" "upload_handler" {
   filename         = "lambda_functions/upload_handler.zip"
   function_name    = "${local.name_prefix}-upload-handler"
   role            = aws_iam_role.lambda_execution.arn
-  handler         = "handler.lambda_handler"
+  handler         = "upload_handler.lambda_handler"
   runtime         = var.lambda_runtime
   timeout         = var.lambda_timeout
   memory_size     = var.lambda_memory_size
 
   environment {
     variables = {
-      S3_BUCKET_NAME = aws_s3_bucket.video_storage.bucket
+      S3_BUCKET_NAME = aws_s3_bucket.storage.bucket
       DYNAMODB_TABLE = aws_dynamodb_table.nativity_production.name
       REDIS_ENDPOINT = aws_elasticache_replication_group.redis.primary_endpoint_address
     }
@@ -150,7 +155,7 @@ resource "aws_lambda_function" "status_handler" {
   filename         = "lambda_functions/status_handler.zip"
   function_name    = "${local.name_prefix}-status-handler"
   role            = aws_iam_role.lambda_execution.arn
-  handler         = "handler.lambda_handler"
+  handler         = "status_handler.lambda_handler"
   runtime         = var.lambda_runtime
   timeout         = var.lambda_timeout
   memory_size     = var.lambda_memory_size
@@ -175,7 +180,7 @@ resource "aws_lambda_function" "translate_handler" {
   filename         = "lambda_functions/translate_handler.zip"
   function_name    = "${local.name_prefix}-translate-handler"
   role            = aws_iam_role.lambda_execution.arn
-  handler         = "handler.lambda_handler"
+  handler         = "translate_handler.lambda_handler"
   runtime         = var.lambda_runtime
   timeout         = var.lambda_timeout
   memory_size     = var.lambda_memory_size
@@ -199,7 +204,7 @@ resource "aws_lambda_function" "localize_handler" {
   filename         = "lambda_functions/localize_handler.zip"
   function_name    = "${local.name_prefix}-localize-handler"
   role            = aws_iam_role.lambda_execution.arn
-  handler         = "handler.lambda_handler"
+  handler         = "localize_handler.lambda_handler"
   runtime         = var.lambda_runtime
   timeout         = var.lambda_timeout
   memory_size     = var.lambda_memory_size
@@ -252,4 +257,81 @@ resource "aws_lambda_permission" "localize_handler" {
   function_name = aws_lambda_function.localize_handler.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+# CloudWatch Log Groups for Video Processing Lambda Functions
+resource "aws_cloudwatch_log_group" "video_processor" {
+  name              = "/aws/lambda/${local.name_prefix}-video-processor"
+  retention_in_days = var.log_retention_days
+  tags              = local.common_tags
+}
+
+resource "aws_cloudwatch_log_group" "job_status_updater" {
+  name              = "/aws/lambda/${local.name_prefix}-job-status-updater"
+  retention_in_days = var.log_retention_days
+  tags              = local.common_tags
+}
+
+# Lambda Function: Video Processor
+resource "aws_lambda_function" "video_processor" {
+  filename         = "lambda_functions/video_processor.zip"
+  source_code_hash = filebase64sha256("lambda_functions/video_processor.zip")
+  function_name    = "${local.name_prefix}-video-processor"
+  role            = aws_iam_role.lambda_execution.arn
+  handler         = "video_processor.lambda_handler"
+  runtime         = var.lambda_runtime
+  timeout         = 900
+  memory_size     = 3008
+
+  environment {
+  variables = {
+    S3_BUCKET_NAME             = aws_s3_bucket.storage.bucket
+    JOBS_TABLE_NAME            = aws_dynamodb_table.jobs.name
+
+    VIDEO_PROCESSING_QUEUE_URL = aws_sqs_queue.video_processing.url
+    HIGH_PRIORITY_QUEUE_URL    = aws_sqs_queue.high_priority.url
+    DRAFT_CREATION_QUEUE_URL   = aws_sqs_queue.draft_creation.url
+
+    GOOGLE_API_KEY             = var.google_api_key
+  }
+}
+
+  depends_on = [
+    aws_cloudwatch_log_group.video_processor,
+  ]
+
+  tags = local.common_tags
+}
+
+# Lambda Function: Job Status Updater
+resource "aws_lambda_function" "job_status_updater" {
+  filename         = "lambda_functions/job_status_updater.zip"
+  function_name    = "${local.name_prefix}-job-status-updater"
+  role            = aws_iam_role.lambda_execution.arn
+  handler         = "job_status_updater.lambda_handler"
+  runtime         = var.lambda_runtime
+  timeout         = 60
+  memory_size     = 512
+
+  environment {
+    variables = {
+      JOBS_TABLE = aws_dynamodb_table.jobs.name
+      USERS_TABLE = aws_dynamodb_table.users.name
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.job_status_updater,
+  ]
+
+  tags = local.common_tags
+}
+
+# Lambda Permission: S3 Invoke Video Processor
+resource "aws_lambda_permission" "s3_invoke_video_processor" {
+  statement_id  = "AllowExecutionFromS3"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.video_processor.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = aws_s3_bucket.storage.arn
 }

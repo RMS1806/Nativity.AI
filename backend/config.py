@@ -89,6 +89,18 @@ class Settings:
     AWS_REGION: str = os.getenv("AWS_REGION", "eu-north-1")
     S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "")
     
+    VIDEO_PROCESSING_QUEUE_URL: str = os.getenv(
+        "VIDEO_PROCESSING_QUEUE_URL", ""
+    )
+    
+    DRAFT_CREATION_QUEUE_URL: str = os.getenv(
+        "DRAFT_CREATION_QUEUE_URL", ""
+    )
+    
+    HIGH_PRIORITY_QUEUE_URL: str = os.getenv(
+        "HIGH_PRIORITY_QUEUE_URL", ""
+    )
+    
     # Redis Configuration
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     

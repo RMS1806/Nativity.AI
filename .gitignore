@@ -39,3 +39,33 @@ htmlcov/
 # Misc
 *.bak
 *.tmp
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+
+# Terraform plans
+*.tfplan
+
+# Lambda build artifacts
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+
+# Temporary folders
+temp_lambda/
+test_video_processor/
+
+# Test files
+test-video.txt
+
+# Outputs
+deployment-outputs.txt
+
+# OS
+.DS_Store
+Thumbs.db

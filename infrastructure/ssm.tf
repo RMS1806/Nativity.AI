@@ -157,7 +157,7 @@ resource "aws_ssm_parameter" "s3_bucket_name" {
 resource "aws_ssm_parameter" "redis_host" {
   name  = "/${local.name_prefix}/redis-host"
   type  = "String"
-  value = aws_elasticache_replication_group.redis.configuration_endpoint_address
+  value = aws_elasticache_replication_group.redis.primary_endpoint_address
   
   description = "Redis host endpoint for Nativity.AI"
   
@@ -249,23 +249,3 @@ resource "aws_ssm_parameter" "job_timeout_minutes" {
   })
 }
 
-# Outputs
-output "ssm_parameter_prefix" {
-  description = "SSM parameter prefix for Nativity.AI"
-  value       = "/${local.name_prefix}/"
-}
-
-output "google_api_key_parameter_arn" {
-  description = "ARN of the Google API key SSM parameter"
-  value       = aws_ssm_parameter.google_api_key.arn
-}
-
-output "clerk_issuer_url_parameter_arn" {
-  description = "ARN of the Clerk issuer URL SSM parameter"
-  value       = aws_ssm_parameter.clerk_issuer_url.arn
-}
-
-output "redis_auth_token_parameter_arn" {
-  description = "ARN of the Redis auth token SSM parameter"
-  value       = aws_ssm_parameter.redis_auth_token.arn
-}

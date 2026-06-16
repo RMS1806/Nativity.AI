@@ -14,72 +14,71 @@ param(
 # Set error action preference
 $ErrorActionPreference = "Stop"
 
-# Colors for output
-$Red = "`e[31m"
-$Green = "`e[32m"
-$Yellow = "`e[33m"
-$Blue = "`e[34m"
-$Reset = "`e[0m"
+# Colors for output using native character codes
+$Red    = "$([char]27)[31m"
+$Green  = "$([char]27)[32m"
+$Yellow = "$([char]27)[33m"
+$Blue   = "$([char]27)[34m"
+$Reset  = "$([char]27)[0m"
 
 function Write-ColorOutput {
-    param([string]$Message, [string]$Color = $Reset)
+    param(
+        [string]$Message, 
+        [string]$Color = $Reset
+    )
     Write-Host "$Color$Message$Reset"
 }
 
 function Check-Prerequisites {
-    Write-ColorOutput "🔍 Checking prerequisites..." $Blue
+    Write-ColorOutput "[CHECK] Checking prerequisites..." $Blue
     
-    # Check if Terraform is installed
     try {
         $terraformVersion = terraform version
-        Write-ColorOutput "✅ Terraform found: $($terraformVersion[0])" $Green
+        Write-ColorOutput "[OK] Terraform found" $Green
     }
     catch {
-        Write-ColorOutput "❌ Terraform not found. Please install Terraform first." $Red
+        Write-ColorOutput "[ERROR] Terraform not found. Please install Terraform first." $Red
         exit 1
     }
     
-    # Check if AWS CLI is installed and configured
     try {
         $awsIdentity = aws sts get-caller-identity 2>$null
         if ($awsIdentity) {
             $identity = $awsIdentity | ConvertFrom-Json
-            Write-ColorOutput "✅ AWS CLI configured for account: $($identity.Account)" $Green
+            Write-ColorOutput "[OK] AWS CLI configured for account: $($identity.Account)" $Green
         }
         else {
-            Write-ColorOutput "❌ AWS CLI not configured. Please run 'aws configure' first." $Red
+            Write-ColorOutput "[ERROR] AWS CLI not configured. Please run 'aws configure' first." $Red
             exit 1
         }
     }
     catch {
-        Write-ColorOutput "❌ AWS CLI not found or not configured." $Red
+        Write-ColorOutput "[ERROR] AWS CLI not found or not configured." $Red
         exit 1
     }
     
-    # Check if terraform.tfvars exists
     if (-not (Test-Path "terraform.tfvars")) {
-        Write-ColorOutput "❌ terraform.tfvars not found. Please copy terraform.tfvars.example and update with your values." $Red
+        Write-ColorOutput "[ERROR] terraform.tfvars not found. Please copy terraform.tfvars.example and update with your values." $Red
         exit 1
     }
     
-    Write-ColorOutput "✅ All prerequisites met!" $Green
+    Write-ColorOutput "[OK] All prerequisites met!" $Green
 }
 
 function Initialize-Terraform {
-    Write-ColorOutput "🚀 Initializing Terraform..." $Blue
+    Write-ColorOutput "[INIT] Initializing Terraform..." $Blue
     
-    # Initialize Terraform
     terraform init
     if ($LASTEXITCODE -ne 0) {
-        Write-ColorOutput "❌ Terraform initialization failed!" $Red
+        Write-ColorOutput "[ERROR] Terraform initialization failed!" $Red
         exit 1
     }
     
-    Write-ColorOutput "✅ Terraform initialized successfully!" $Green
+    Write-ColorOutput "[OK] Terraform initialized successfully!" $Green
 }
 
 function Plan-Infrastructure {
-    Write-ColorOutput "📋 Planning infrastructure changes..." $Blue
+    Write-ColorOutput "[PLAN] Planning infrastructure changes..." $Blue
     
     $planFile = "terraform-$Environment.tfplan"
     
@@ -91,11 +90,11 @@ function Plan-Infrastructure {
     }
     
     if ($LASTEXITCODE -ne 0) {
-        Write-ColorOutput "❌ Terraform planning failed!" $Red
+        Write-ColorOutput "[ERROR] Terraform planning failed!" $Red
         exit 1
     }
     
-    Write-ColorOutput "✅ Terraform plan completed successfully!" $Green
+    Write-ColorOutput "[OK] Terraform plan completed successfully!" $Green
     return $planFile
 }
 
@@ -103,10 +102,10 @@ function Apply-Infrastructure {
     param([string]$PlanFile)
     
     if ($Destroy) {
-        Write-ColorOutput "🔥 Destroying infrastructure..." $Yellow
+        Write-ColorOutput "[DESTROY] Destroying infrastructure..." $Yellow
     }
     else {
-        Write-ColorOutput "🏗️ Applying infrastructure changes..." $Blue
+        Write-ColorOutput "[APPLY] Applying infrastructure changes..." $Blue
     }
     
     if ($AutoApprove) {
@@ -117,39 +116,44 @@ function Apply-Infrastructure {
     }
     
     if ($LASTEXITCODE -ne 0) {
-        Write-ColorOutput "❌ Terraform apply failed!" $Red
+        Write-ColorOutput "[ERROR] Terraform apply failed!" $Red
         exit 1
     }
     
     if ($Destroy) {
-        Write-ColorOutput "✅ Infrastructure destroyed successfully!" $Green
+        Write-ColorOutput "[OK] Infrastructure destroyed successfully!" $Green
     }
     else {
-        Write-ColorOutput "✅ Infrastructure deployed successfully!" $Green
+        Write-ColorOutput "[OK] Infrastructure deployed successfully!" $Green
     }
 }
 
 function Show-Outputs {
-    Write-ColorOutput "📊 Infrastructure outputs:" $Blue
+    Write-ColorOutput "[OUTPUTS] Infrastructure outputs:" $Blue
     terraform output
 }
 
 function Main {
-    Write-ColorOutput "🌟 Nativity.AI Infrastructure Deployment" $Blue
+    Write-ColorOutput "[START] Nativity.AI Infrastructure Deployment" $Blue
     Write-ColorOutput "Environment: $Environment" $Yellow
     
     if ($Destroy) {
-        Write-ColorOutput "⚠️  DESTROY MODE - This will delete all infrastructure!" $Red
+        Write-ColorOutput "[WARN] DESTROY MODE - This will delete all infrastructure!" $Red
         $confirmation = Read-Host "Are you sure you want to destroy the $Environment environment? (yes/no)"
         if ($confirmation -ne "yes") {
-            Write-ColorOutput "❌ Deployment cancelled." $Yellow
+            Write-ColorOutput "[CANCEL] Deployment cancelled." $Yellow
             exit 0
         }
     }
     
-    # Change to infrastructure directory
-    $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
-    Set-Location $scriptPath
+    # Clean, modern approach to get script directory
+    if ($PSScriptRoot) {
+        Set-Location $PSScriptRoot
+    }
+    else {
+        $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
+        if ($scriptPath) { Set-Location $scriptPath }
+    }
     
     try {
         Check-Prerequisites
@@ -158,7 +162,7 @@ function Main {
         $planFile = Plan-Infrastructure
         
         if ($Plan) {
-            Write-ColorOutput "📋 Plan-only mode. Review the plan above." $Yellow
+            Write-ColorOutput "[INFO] Plan-only mode. Review the plan above." $Yellow
             return
         }
         
@@ -167,7 +171,8 @@ function Main {
         if (-not $Destroy) {
             Show-Outputs
             
-            Write-ColorOutput "`n🎉 Deployment completed successfully!" $Green
+            Write-Host ""
+            Write-ColorOutput "[SUCCESS] Deployment completed successfully!" $Green
             Write-ColorOutput "Next steps:" $Blue
             Write-ColorOutput "1. Build and push Docker images to ECR" $Reset
             Write-ColorOutput "2. Update ECS services with new task definitions" $Reset
@@ -176,13 +181,13 @@ function Main {
         }
     }
     catch {
-        Write-ColorOutput "❌ Deployment failed: $_" $Red
+        Write-ColorOutput "[ERROR] Deployment failed: $_" $Red
         exit 1
     }
     finally {
-        # Clean up plan files
-        if (Test-Path "terraform-$Environment.tfplan") {
-            Remove-Item "terraform-$Environment.tfplan"
+        $targetPlan = "terraform-$Environment.tfplan"
+        if (Test-Path $targetPlan) {
+            Remove-Item $targetPlan -Force
         }
     }
 }

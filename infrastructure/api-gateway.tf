@@ -205,7 +205,7 @@ resource "aws_api_gateway_method_settings" "main" {
 
   settings {
     metrics_enabled = true
-    logging_level   = "INFO"
+    logging_level   = "OFF"
     
     throttling_rate_limit  = 1000
     throttling_burst_limit = 2000

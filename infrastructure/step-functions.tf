@@ -79,6 +79,17 @@ resource "aws_iam_role_policy" "step_functions" {
           "logs:DescribeLogGroups"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "events:PutRule",
+          "events:PutTargets",
+          "events:DescribeRule",
+          "events:DeleteRule",
+          "events:RemoveTargets"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -137,7 +148,7 @@ resource "aws_sfn_state_machine" "video_processing" {
             Variable = "$.jobType"
             StringEquals = "draft"
             Next = "ProcessDraft"
-          }
+          },
           {
             Variable = "$.jobType"
             StringEquals = "high_priority"
@@ -535,18 +546,3 @@ resource "aws_cloudwatch_metric_alarm" "step_functions_long_executions" {
   tags = local.common_tags
 }
 
-# Outputs
-output "video_processing_state_machine_arn" {
-  description = "ARN of the video processing state machine"
-  value       = aws_sfn_state_machine.video_processing.arn
-}
-
-output "batch_processing_state_machine_arn" {
-  description = "ARN of the batch processing state machine"
-  value       = aws_sfn_state_machine.batch_processing.arn
-}
-
-output "job_notifications_topic_arn" {
-  description = "ARN of the job notifications SNS topic"
-  value       = aws_sns_topic.job_notifications.arn
-}

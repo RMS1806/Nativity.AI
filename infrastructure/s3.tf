@@ -313,23 +313,3 @@ resource "aws_iam_role_policy" "s3_replication" {
   })
 }
 
-# Outputs
-output "s3_bucket_name" {
-  description = "Name of the main S3 storage bucket"
-  value       = aws_s3_bucket.storage.bucket
-}
-
-output "s3_bucket_arn" {
-  description = "ARN of the main S3 storage bucket"
-  value       = aws_s3_bucket.storage.arn
-}
-
-output "s3_bucket_domain_name" {
-  description = "Domain name of the S3 bucket"
-  value       = aws_s3_bucket.storage.bucket_domain_name
-}
-
-output "s3_backup_bucket_name" {
-  description = "Name of the backup S3 bucket (production only)"
-  value       = var.environment == "prod" ? aws_s3_bucket.backup[0].bucket : null
-}
