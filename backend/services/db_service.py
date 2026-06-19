@@ -423,18 +423,26 @@ class DBService:
         """
         if not self.table:
             return None
-        
+
         try:
-            # Use GSI if available, otherwise scan (expensive)
-            response = self.table.scan(
-                FilterExpression='job_id = :job_id',
-                ExpressionAttributeValues={':job_id': job_id},
-                Limit=1
-            )
-            
-            items = response.get('Items', [])
-            return items[0] if items else None
-            
+            # Scan and filter by job_id across all users. NOTE: do NOT use Limit=1
+            # here — DynamoDB applies Limit BEFORE the FilterExpression, so Limit=1
+            # reads a single row, filters it out, and returns nothing unless the
+            # target job is literally the first item scanned. Paginate instead.
+            scan_kwargs = {
+                'FilterExpression': 'job_id = :job_id',
+                'ExpressionAttributeValues': {':job_id': job_id},
+            }
+            while True:
+                response = self.table.scan(**scan_kwargs)
+                items = response.get('Items', [])
+                if items:
+                    return items[0]
+                last_key = response.get('LastEvaluatedKey')
+                if not last_key:
+                    return None
+                scan_kwargs['ExclusiveStartKey'] = last_key
+
         except ClientError:
             return None
     
