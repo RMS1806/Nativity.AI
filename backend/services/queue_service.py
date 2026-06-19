@@ -362,13 +362,15 @@ class QueueService:
         
         print(f"🔄 Retrying job {job.job_id} (attempt {job.retry_count}/{job.max_retries}) in {delay_seconds}s")
         
-        # Re-enqueue with delay
+        # Re-enqueue with delay, keeping the SAME job_id so the retried job
+        # updates the record the frontend is polling (not a fresh orphan id).
         await self.enqueue_job(
             job_type=job.job_type,
             user_id=job.user_id,
             payload=job.payload,
             priority=job.priority,
-            delay_seconds=delay_seconds
+            delay_seconds=delay_seconds,
+            job_id=job.job_id
         )
         
         return True

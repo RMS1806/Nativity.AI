@@ -81,7 +81,7 @@ class JobService:
     def update_job_status(
         self,
         job_id: str,
-        status: JobStatus,
+        status: JobStatus = None,
         progress: int = None,
         message: str = None,
         user_id: str = None,
@@ -107,26 +107,27 @@ class JobService:
             print(f"Warning: Job {job_id} not found for status update")
             return False
         
-        # Update job object
-        current_job.status = status
+        # Update job object (status is optional — preserve current when not given)
+        if status is not None:
+            current_job.status = status
         if progress is not None:
             current_job.progress = progress
         if message is not None:
             current_job.message = message
         if error is not None:
             current_job.error = error
-        
+
         # Save to Redis for real-time updates
         self.redis.set_job_status(
             job_id=job_id,
-            status=status.value,
+            status=current_job.status.value,
             progress=current_job.progress,
             message=current_job.message
         )
-        
+
         # Save to DynamoDB for persistence (if user_id available)
         if user_id:
-            if status == JobStatus.FAILED and error:
+            if current_job.status == JobStatus.FAILED and error:
                 self.db.save_video(
                     user_id=user_id,
                     job_id=job_id,
@@ -142,7 +143,7 @@ class JobService:
                     job_id=job_id,
                     progress=current_job.progress,
                     message=current_job.message,
-                    status=status.value
+                    status=current_job.status.value
                 )
         
         return True
