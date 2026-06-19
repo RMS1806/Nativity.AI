@@ -40,9 +40,31 @@ async def lifespan(app: FastAPI):
         print("\n   ⚠️  WARNING: FFmpeg not found!")
         print("   Video processing will not work without FFmpeg.")
         print("   Install: https://ffmpeg.org/download.html")
-    
+
+    # ─────────────────────────────────────────────────────────────
+    # In-process worker fallback
+    # When no external SQS queue is configured, jobs land in a local
+    # in-memory queue. Start a worker thread here so this single service
+    # also PROCESSES jobs instead of leaving them stuck at "queued".
+    # (Runs in its own thread + event loop so the heavy Gemini/FFmpeg
+    # work doesn't block the API from serving status-polling requests.)
+    # For real scale, set VIDEO_PROCESSING_QUEUE_URL and run a separate
+    # worker service (python start_worker.py); this block then no-ops.
+    # ─────────────────────────────────────────────────────────────
+    if not queue_service.is_available():
+        import threading
+        import asyncio as _asyncio
+        from workers.video_processor import VideoProcessor
+
+        def _run_inprocess_worker():
+            worker = VideoProcessor(worker_id="inproc-1")
+            _asyncio.run(worker.start())
+
+        threading.Thread(target=_run_inprocess_worker, daemon=True).start()
+        print("   ✓ In-process worker: ✅ Started (local queue mode)")
+
     print("="*50 + "\n")
-    
+
     yield
     
     # Shutdown

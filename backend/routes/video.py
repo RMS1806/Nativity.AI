@@ -90,6 +90,7 @@ async def start_localization(
     )
     
     # Queue job for background processing (no more background_tasks!)
+    # Pass the created job_id so the worker updates the SAME record the frontend polls.
     await queue_service.enqueue_job(
         job_type="video_localization",
         user_id=user_id,
@@ -97,7 +98,8 @@ async def start_localization(
             "file_key": request.file_key,
             "target_language": request.target_language.value
         },
-        priority=JobPriority.NORMAL
+        priority=JobPriority.NORMAL,
+        job_id=job.job_id
     )
     
     return {
@@ -133,6 +135,7 @@ async def create_translation_draft(
     )
     
     # Queue draft creation job (higher priority than full processing)
+    # Pass the created job_id so the worker updates the SAME record the frontend polls.
     await queue_service.enqueue_job(
         job_type="draft_creation",
         user_id=user_id,
@@ -140,7 +143,8 @@ async def create_translation_draft(
             "file_key": request.file_key,
             "target_language": request.target_language.value
         },
-        priority=JobPriority.HIGH  # Drafts get priority
+        priority=JobPriority.HIGH,  # Drafts get priority
+        job_id=job.job_id
     )
     
     return {

@@ -149,8 +149,13 @@ class QueueService:
             return "123456789012"  # Fallback
     
     def is_available(self) -> bool:
-        """Check if queue service is available"""
-        return self._sqs_client is not None and self._queue_url is not None
+        """Check if queue service is available.
+
+        An unset queue URL is an empty string (not None), so we must check
+        truthiness — otherwise enqueue/dequeue try SQS with an empty URL and
+        silently fall back to a local queue while reporting "Ready".
+        """
+        return self._sqs_client is not None and bool(self._queue_url)
     
     async def enqueue_job(
         self,
@@ -158,22 +163,26 @@ class QueueService:
         user_id: str,
         payload: Dict[str, Any],
         priority: JobPriority = JobPriority.NORMAL,
-        delay_seconds: int = 0
+        delay_seconds: int = 0,
+        job_id: Optional[str] = None
     ) -> str:
         """
         Add a job to the queue
-        
+
         Args:
             job_type: Type of job (e.g., 'video_localization', 'draft_creation')
             user_id: User identifier
             payload: Job data
             priority: Job priority level
             delay_seconds: Delay before job becomes available
-            
+            job_id: Use an existing job ID (e.g. from job_service.create_job) so the
+                    worker updates the same record the frontend is polling. If omitted,
+                    a new ID is generated.
+
         Returns:
             str: Job ID
         """
-        job_id = str(uuid.uuid4())
+        job_id = job_id or str(uuid.uuid4())
         
         job = QueueJob(
             job_id=job_id,
