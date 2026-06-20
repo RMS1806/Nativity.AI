@@ -286,22 +286,36 @@ class JobService:
         if results:
             return results
         
-        # Fallback to DynamoDB (results might be in draft_segments)
+        # Fallback to DynamoDB — assemble whatever completion data exists.
+        # Return the output URL even if segments aren't stored, so the result
+        # card can still show the video/download.
         db_job = self.db.get_job_by_id(job_id)
-        if db_job and db_job.get("draft_segments"):
+        if db_job:
             import json
-            try:
-                segments = json.loads(db_job["draft_segments"])
-                return {
-                    "segments": segments,
-                    "cultural_report": json.loads(db_job.get("cultural_report", "{}")),
-                    "output_url": db_job.get("output_url"),
-                    "whatsapp_url": db_job.get("whatsapp_url"),
-                    "file_size_mb": float(db_job.get("file_size_mb", 0))
-                }
-            except (json.JSONDecodeError, ValueError):
-                pass
-        
+            results: Dict[str, Any] = {
+                "output_url": db_job.get("output_url"),
+                "whatsapp_url": db_job.get("whatsapp_url"),
+            }
+            if db_job.get("file_size_mb"):
+                try:
+                    results["file_size_mb"] = float(db_job["file_size_mb"])
+                except (ValueError, TypeError):
+                    pass
+            if db_job.get("cultural_report"):
+                try:
+                    results["cultural_report"] = json.loads(db_job["cultural_report"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if db_job.get("draft_segments"):
+                try:
+                    segments = json.loads(db_job["draft_segments"])
+                    results["segments"] = segments
+                    results["analysis"] = {"segments": segments}
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if results.get("output_url") or results.get("segments"):
+                return results
+
         return None
     
     def cleanup_old_jobs(self, days_old: int = 7) -> int:

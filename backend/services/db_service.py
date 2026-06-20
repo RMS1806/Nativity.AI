@@ -101,21 +101,32 @@ class DBService:
         """
         if not self.table:
             return {"error": "DynamoDB not configured"}
-        
+
         timestamp = datetime.utcnow().isoformat() + "Z"
-        
-        # Build item with required fields
-        item = {
-            'PK': f"USER#{user_id}",
-            'SK': f"VIDEO#{timestamp}",
-            'job_id': job_id,
-            'user_id': user_id,
-            'target_language': target_language,
-            'input_file': input_file,
-            'status': status,
-            'created_at': timestamp,
-        }
-        
+
+        # Upsert: if a record already exists for this job_id, update it IN PLACE
+        # (reuse its PK/SK and keep existing fields) instead of writing a new row.
+        # Without this, create_job and completion each PUT a separate item, leaving
+        # duplicate rows for one job — and the job lookup could return the
+        # incomplete row, so the result card never received the output URL.
+        existing = self.get_video_by_job_id(user_id, job_id)
+        if existing:
+            item = dict(existing)
+        else:
+            item = {
+                'PK': f"USER#{user_id}",
+                'SK': f"VIDEO#{timestamp}",
+                'created_at': timestamp,
+            }
+
+        # Core fields (always set/refreshed)
+        item['job_id'] = job_id
+        item['user_id'] = user_id
+        item['target_language'] = target_language
+        item['input_file'] = input_file
+        item['status'] = status
+        item['updated_at'] = timestamp
+
         # Add optional fields if provided
         if output_url:
             item['output_url'] = output_url
