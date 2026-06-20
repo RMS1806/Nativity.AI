@@ -48,7 +48,36 @@ class FFmpegService:
     def is_available(self) -> bool:
         """Check if FFmpeg is available for use"""
         return self.ffmpeg_available
-    
+
+    @staticmethod
+    def _parse_timestamp(val) -> float:
+        """Convert a timestamp to float seconds.
+
+        Accepts numbers (already seconds) or strings like 'SS', 'MM:SS',
+        or 'HH:MM:SS' (Gemini returns 'MM:SS').
+        """
+        if isinstance(val, (int, float)):
+            return float(val)
+        try:
+            parts = [float(p) for p in str(val).strip().split(":")]
+        except (ValueError, AttributeError):
+            return 0.0
+        if len(parts) == 1:
+            return parts[0]
+        if len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        if len(parts) == 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        return 0.0
+
+    def _get_audio_duration_seconds(self, path: str) -> float:
+        """Return the duration of an audio file in seconds (0.0 on failure)."""
+        try:
+            probe = ffmpeg.probe(path)
+            return float(probe['format'].get('duration', 0.0))
+        except Exception:
+            return 0.0
+
     def get_video_info(self, video_path: str) -> dict:
         """
         Get video metadata using ffprobe
@@ -271,133 +300,99 @@ class FFmpegService:
             has_original_audio = video_info.get('audio', {}).get('codec') is not None
             print(f"🎵 Original video has audio: {has_original_audio}")
             
-            # Step 2: Concatenate all audio segments
-            audio_files = [seg.get('file_path') for seg in audio_segments if seg.get('file_path')]
-            
-            if not audio_files:
+            # ─────────────────────────────────────────────────────────────
+            # Step 2: Build a TIME-ALIGNED dub track.
+            # For each segment we (a) speed it up (atempo) so it fits its
+            # original spoken time slot, and (b) place it at its real start
+            # timestamp (adelay). This keeps the dub in sync with the speaker
+            # instead of concatenating back-to-back and drifting past the end.
+            # ─────────────────────────────────────────────────────────────
+            valid_segments = [
+                s for s in audio_segments
+                if s.get('file_path') and os.path.exists(s.get('file_path'))
+            ]
+            if not valid_segments:
                 raise Exception("No audio segments provided")
-            
-            combined_audio = os.path.join(temp_dir, "combined_audio.mp3")
-            concat_result = self.concatenate_audio_segments(audio_files, combined_audio)
-            
-            if not concat_result.success:
-                raise Exception(f"Audio concatenation failed: {concat_result.error}")
-            
-            # Step 3: Build video encoding options
-            video_filter = 'scale=-2:480' if optimize_for_mobile else None
-            
-            # Convert delay from seconds to milliseconds for adelay filter
-            delay_ms = int(tts_delay_seconds * 1000)
-            
+
+            MAX_TEMPO = 2.0  # strict-sync cap (single atempo filter max is 2.0x)
+
+            inputs = ["-i", original_video_path]
+            filter_parts = []
+            seg_labels = []
+
+            for idx, seg in enumerate(valid_segments):
+                file_path = seg['file_path']
+                start_s = self._parse_timestamp(seg.get('start_time', 0))
+                end_s = self._parse_timestamp(seg.get('end_time', 0))
+                slot_s = max(end_s - start_s, 0.0)
+                gen_s = self._get_audio_duration_seconds(file_path)
+
+                # Speed up to fit the slot (strict sync); never slow down below 1.0x
+                tempo = 1.0
+                if slot_s > 0 and gen_s > slot_s:
+                    tempo = min(gen_s / slot_s, MAX_TEMPO)
+
+                input_index = idx + 1  # input 0 is the video
+                inputs += ["-i", file_path]
+
+                delay_ms = max(int(round(start_s * 1000)), 0)
+                label = f"s{input_index}"
+                # volume -> time-stretch (pitch-preserving) -> place at start time
+                filter_parts.append(
+                    f"[{input_index}:a]volume={tts_volume},atempo={tempo:.4f},"
+                    f"adelay={delay_ms}|{delay_ms}[{label}]"
+                )
+                seg_labels.append(f"[{label}]")
+
+            print(
+                f"🎙️ Time-aligning {len(valid_segments)} segments "
+                f"(strict sync, max {MAX_TEMPO}x), bg audio={has_original_audio}"
+            )
+
+            # Lowered original audio as a background bed (if present)
+            mix_inputs = list(seg_labels)
             if has_original_audio:
-                # MIX original audio (background) with TTS audio (foreground)
-                print(f"🔊 Mixing audio: background={background_volume*100}%, TTS={tts_volume*100}%, delay={tts_delay_seconds}s")
-                
-                # Build filter_complex for audio mixing with TTS delay
-                # [1:a] = TTS audio -> delay to match first spoken word, then apply volume
-                # [0:a] = original video audio -> apply background volume (lowered)
-                # amix with duration=longest: Keep FULL original video length
-                if delay_ms > 0:
-                    # Apply delay to TTS to match intro music/silence
-                    filter_complex = (
-                        f"[1:a]adelay={delay_ms}|{delay_ms},volume={tts_volume}[delayed_tts];"
-                        f"[0:a]volume={background_volume}[bg];"
-                        f"[delayed_tts][bg]amix=inputs=2:duration=longest[aout]"
-                    )
-                    print(f"⏱️ Delaying TTS by {tts_delay_seconds}s ({delay_ms}ms) to match first spoken word")
-                else:
-                    # No delay needed - speech starts immediately
-                    filter_complex = (
-                        f"[1:a]volume={tts_volume}[tts];"
-                        f"[0:a]volume={background_volume}[bg];"
-                        f"[tts][bg]amix=inputs=2:duration=longest[aout]"
-                    )
-                
-                # Build FFmpeg command using subprocess for complex filters
-                cmd = [
-                    "ffmpeg", "-y",
-                    "-i", original_video_path,
-                    "-i", combined_audio,
-                    "-filter_complex", filter_complex,
-                    "-map", "0:v",
-                    "-map", "[aout]",
-                ]
-                
-                # Add video encoding options
-                if optimize_for_mobile:
-                    # Re-encode for mobile optimization
-                    cmd.extend([
-                        "-c:v", "libx264",
-                        "-preset", "fast",
-                        "-crf", "28",
-                        "-vf", "scale=-2:480",
-                        "-movflags", "+faststart",
-                    ])
-                else:
-                    # Fast copy mode - no re-encoding for speed
-                    cmd.extend([
-                        "-c:v", "copy",
-                    ])
-                
-                # Audio encoding - NO -shortest flag to keep full video length
-                cmd.extend([
-                    "-c:a", "aac",
-                    "-b:a", "128k",
-                ])
-                
-                cmd.append(output_path)
-                
-                print(f"🎬 Running FFmpeg with audio mixing...")
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True
+                filter_parts.append(f"[0:a]volume={background_volume}[bg]")
+                mix_inputs.append("[bg]")
+
+            # Mix everything, then trim to the video length so audio never
+            # runs past the end of the video.
+            if len(mix_inputs) > 1:
+                filter_parts.append(
+                    f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:"
+                    f"duration=longest:normalize=0[mixed]"
                 )
-                
-                if result.returncode != 0:
-                    raise Exception(f"FFmpeg mixing failed: {result.stderr}")
-                
+                mixed_label = "[mixed]"
             else:
-                # No original audio - fall back to simple audio replacement
-                print("⚠️ No original audio stream found. Using simple audio replacement.")
-                
-                video_input = ffmpeg.input(original_video_path)
-                audio_input = ffmpeg.input(combined_audio)
-                
-                # Build output options based on optimization settings
-                output_options = {
-                    'vcodec': 'libx264',
-                    'acodec': 'aac',
-                    'audio_bitrate': '128k',
-                    'shortest': None,
-                }
-                
-                if optimize_for_mobile:
-                    output_options.update({
-                        'preset': 'fast',
-                        'crf': 28,
-                        'vf': 'scale=-2:480',
-                        'movflags': '+faststart',
-                    })
-                else:
-                    output_options.update({
-                        'preset': 'medium',
-                        'crf': 23,
-                    })
-                
-                # Run FFmpeg with simple replacement
-                (
-                    ffmpeg
-                    .output(
-                        video_input.video,
-                        audio_input.audio,
-                        output_path,
-                        **output_options
-                    )
-                    .overwrite_output()
-                    .run(capture_stdout=True, capture_stderr=True)
-                )
-            
+                mixed_label = mix_inputs[0]
+
+            filter_parts.append(
+                f"{mixed_label}atrim=0:{video_duration:.3f},asetpts=PTS-STARTPTS[aout]"
+            )
+
+            filter_complex = ";".join(filter_parts)
+
+            cmd = ["ffmpeg", "-y"] + inputs + [
+                "-filter_complex", filter_complex,
+                "-map", "0:v",
+                "-map", "[aout]",
+            ]
+
+            if optimize_for_mobile:
+                cmd += [
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "28",
+                    "-vf", "scale=-2:480", "-movflags", "+faststart",
+                ]
+            else:
+                cmd += ["-c:v", "copy"]
+
+            cmd += ["-c:a", "aac", "-b:a", "128k", output_path]
+
+            print("🎬 Running FFmpeg (time-aligned dub)...")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception(f"FFmpeg stitching failed: {result.stderr[-2000:]}")
+
             # Step 4: Get final output info
             final_info = self.get_video_info(output_path)
             

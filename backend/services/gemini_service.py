@@ -283,6 +283,7 @@ CRITICAL INSTRUCTIONS:
 6. Ensure timestamps are accurate for lip-sync
 7. IMPORTANT: Populate the "cultural_analysis" array with EVERY cultural adaptation made, explaining the reasoning
 8. CRITICAL: Accurately detect first_speech_offset_seconds - if there's intro music, silence, or ambiance before the first spoken word, return that offset in seconds (e.g., 2.5). If speech starts immediately, return 0
+9. LENGTH-MATCH FOR DUBBING: Each segment will be dubbed into the time window between its start_time and end_time. Keep "translated_text" close to the ORIGINAL spoken duration of that segment — prefer concise, natural phrasing that a speaker could comfortably say in that many seconds. Drop filler words and avoid padding. When {target_lang_display} would naturally be longer than the English, tighten the wording (transcreate, don't pad). It is better to be slightly shorter than to overflow the segment's time window.
 
 Return ONLY valid JSON, no additional text.'''
 
