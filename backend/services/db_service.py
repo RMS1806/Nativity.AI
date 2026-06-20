@@ -69,6 +69,7 @@ class DBService:
         whatsapp_url: Optional[str] = None,
         file_size_mb: Optional[float] = None,
         cultural_report: Optional[Dict[str, Any]] = None,
+        cultural_analysis: Optional[List[Dict[str, Any]]] = None,
         segments_count: Optional[int] = None,
         draft_segments: Optional[List[Dict[str, Any]]] = None,
         output_s3_key: Optional[str] = None,
@@ -142,6 +143,8 @@ class DBService:
             item['file_size_mb'] = str(file_size_mb)  # DynamoDB prefers strings for decimals
         if cultural_report:
             item['cultural_report'] = json.dumps(cultural_report)
+        if cultural_analysis:
+            item['cultural_analysis'] = json.dumps(cultural_analysis)
         if segments_count is not None:
             item['segments_count'] = segments_count
         if draft_segments:

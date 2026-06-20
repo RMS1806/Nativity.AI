@@ -856,12 +856,34 @@ async def get_job_status(job_id: str):
 @router.get("/job/{job_id}/analysis")
 async def get_job_analysis(job_id: str):
     """
-    Get the detailed Gemini analysis for a completed job
+    Get the detailed Gemini analysis for a completed job.
+
+    Reads from DynamoDB (the durable store). Returns the translated segments
+    (for SRT download) and the cultural_analysis / cultural_report
+    (for the Cultural Insights modal).
     """
-    if job_id not in job_results:
+    import json as _json
+
+    raw = db_service.get_job_by_id(job_id)
+    if not raw:
         raise HTTPException(status_code=404, detail="Analysis not found")
-    
-    return job_results[job_id].get("analysis", {})
+
+    def _parse(field, default):
+        val = raw.get(field)
+        if not val:
+            return default
+        if isinstance(val, str):
+            try:
+                return _json.loads(val)
+            except (json.JSONDecodeError, TypeError):
+                return default
+        return val
+
+    return {
+        "segments": _parse("draft_segments", []),
+        "cultural_analysis": _parse("cultural_analysis", []),
+        "cultural_report": _parse("cultural_report", {}),
+    }
 
 
 @router.post("/metadata")
@@ -881,72 +903,34 @@ async def generate_video_metadata(
         raise HTTPException(status_code=400, detail="job_id is required")
 
     user_id = user.get("sub")
-    print(f"\n{'='*60}")
-    print(f"[METADATA] Request: job_id={job_id}, user_id={user_id}")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid user token")
 
-    # ── Step 1: Resolve target_language and translated_text ──────────────────
+    # ── Step 1: Resolve target_language and translated_text from DynamoDB ─────
+    import json as _json
     translated_text = None
     target_language = "hindi"
 
-    # Path A: in-memory job_results (freshly processed job, same server session)
-    print(f"[METADATA] Checking in-memory job_results... key present: {job_id in job_results}")
-    if job_id in job_results:
-        result_data = job_results[job_id]
-        segments = result_data.get("segments") or []
-        target_language = result_data.get("target_language", "hindi")
-        print(f"[METADATA] In-memory: found {len(segments)} segments, lang={target_language}")
-        if segments:
-            translated_text = " ".join(
-                seg.get("translated_text", "") for seg in segments
-            ).strip()
-            print(f"[METADATA] In-memory translated_text length: {len(translated_text)}")
-
-    # Path B: DynamoDB fallback
-    if not translated_text:
-        print(f"[METADATA] No translated_text from memory. Querying DynamoDB...")
-        if not user_id:
-            print("[METADATA] ERROR: user_id is None — cannot query DynamoDB")
-        else:
-            import json as _json
-            raw_item = db_service.get_video_by_job_id(user_id, job_id)
-            print(f"[METADATA] DynamoDB item found: {raw_item is not None}")
-            if raw_item:
-                target_language = raw_item.get("target_language", "hindi")
-                raw_segments_json = raw_item.get("draft_segments")
-                print(f"[METADATA] target_language={target_language}")
-                print(f"[METADATA] draft_segments present: {raw_segments_json is not None}")
-                if raw_segments_json:
-                    try:
-                        db_segments = _json.loads(raw_segments_json)
-                        print(f"[METADATA] Parsed {len(db_segments)} segments from DynamoDB")
-                        if db_segments:
-                            # Log first segment keys so we can see the structure
-                            print(f"[METADATA] First segment keys: {list(db_segments[0].keys())}")
-                            print(f"[METADATA] First segment translated_text: {repr(db_segments[0].get('translated_text', 'KEY MISSING'))[:120]}")
-                        translated_text = " ".join(
-                            seg.get("translated_text", "") for seg in db_segments
-                        ).strip()
-                        print(f"[METADATA] Extracted translated_text length: {len(translated_text)}")
-                    except Exception as parse_err:
-                        print(f"[METADATA] ERROR parsing draft_segments JSON: {parse_err}")
-                        translated_text = None
-                else:
-                    print("[METADATA] draft_segments field is empty/null in DynamoDB item")
-            else:
-                print("[METADATA] DynamoDB returned no item for this job_id")
+    raw_item = db_service.get_video_by_job_id(user_id, job_id)
+    if raw_item:
+        target_language = raw_item.get("target_language", "hindi")
+        raw_segments_json = raw_item.get("draft_segments")
+        if raw_segments_json:
+            try:
+                db_segments = _json.loads(raw_segments_json)
+                translated_text = " ".join(
+                    seg.get("translated_text", "") for seg in db_segments
+                ).strip()
+            except Exception as parse_err:
+                print(f"[METADATA] ERROR parsing draft_segments JSON: {parse_err}")
+                translated_text = None
 
     # ── Step 2: Guard – transcript must exist ────────────────────────────────
-    print(f"[METADATA] Final translated_text: {'FOUND (len=' + str(len(translated_text)) + ')' if translated_text else 'MISSING — will 400'}")
     if not translated_text:
         raise HTTPException(
             status_code=400,
-            detail="Transcript not available for this video. Please ensure the job has been finalized."
+            detail="Transcript not available for this video. Please ensure the job has completed."
         )
-
-    # ── Step 3: Validate job status (only for in-memory jobs) ────────────────
-    job = jobs.get(job_id)
-    if job and job.status != JobStatus.COMPLETE:
-        raise HTTPException(status_code=400, detail="Job is not yet complete")
 
     if not gemini_service.is_configured():
         raise HTTPException(status_code=503, detail="Gemini API not configured")

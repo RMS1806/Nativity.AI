@@ -312,6 +312,7 @@ class VideoProcessor:
                 "analysis": analysis_result,
                 "segments": segments,
                 "cultural_report": cultural_report,
+                "cultural_analysis": analysis_result.get("cultural_analysis", []),
                 "segments_count": len(segments),
                 "file_size_mb": stitch_result.file_size_mb,
                 "words_localized": sum(len(seg.get("translated_text", "").split()) for seg in segments)

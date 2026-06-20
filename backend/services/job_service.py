@@ -238,6 +238,7 @@ class JobService:
                 file_size_mb=file_size_mb,
                 progress=100,
                 cultural_report=results.get("cultural_report"),
+                cultural_analysis=results.get("cultural_analysis"),
                 segments_count=results.get("segments_count"),
                 draft_segments=results.get("segments"),
                 subtitle_s3_key=results.get("subtitle_s3_key"),
