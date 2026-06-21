@@ -400,7 +400,7 @@ class JobService:
         return {
             "job_service": "healthy",
             "redis": redis_health,
-            "dynamodb": {
+            "database": {
                 "status": "healthy" if db_healthy else "unavailable",
                 "configured": db_healthy
             }

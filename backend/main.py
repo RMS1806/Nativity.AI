@@ -142,7 +142,7 @@ async def health_check():
             "gemini": "ready" if gemini_service.is_configured() else "not configured",
             "aws_s3": "ready" if s3_service.is_configured() else "not configured",
             "redis": job_service_health["redis"]["status"],
-            "dynamodb": job_service_health["dynamodb"]["status"],
+            "database": job_service_health["database"]["status"],
             "queue": queue_service_health["status"],
             "ffmpeg": "ready" if ffmpeg_service.is_available() else "not installed",
             "tts": "ready"  # edge-tts is always available

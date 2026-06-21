@@ -7,9 +7,12 @@ python-multipart
 google-genai
 google-api-core
 
-# AWS (S3, SQS, DynamoDB)
+# AWS (S3, SQS)
 boto3
 botocore
+
+# PostgreSQL (job + history storage)
+psycopg2-binary
 
 # Redis for caching and job management
 redis

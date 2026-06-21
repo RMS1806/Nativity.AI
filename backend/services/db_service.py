@@ -1,63 +1,75 @@
 """
-DynamoDB Service for Nativity.ai
-Handles persistent storage of video localization history
+PostgreSQL Service for Nativity.ai
+Persistent storage of video localization jobs + history.
 
-Table Schema:
-    - PK: USER#<user_id>
-    - SK: VIDEO#<iso_timestamp>
-    
-Each item stores:
-    - job_id: Unique job identifier
-    - status: Job status (complete, failed, etc.)
-    - target_language: Language code
-    - input_file: Original S3 key
-    - output_url: Presigned download URL
-    - cultural_report: Gemini's cultural adaptation report
-    - created_at: ISO timestamp
+Drop-in replacement for the previous DynamoDB service: every public method keeps
+the same signature and return shape, so routes / job_service / worker are unchanged.
+
+Table: videos  (one row per job_id)  — see scripts/schema.sql
+JSON columns (cultural_report, cultural_analysis, draft_segments) are stored as
+TEXT containing json.dumps(...) output, exactly like the old store, so callers
+that do json.loads(...) keep working unchanged.
 """
 
-import boto3
-from botocore.exceptions import ClientError
+import json
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-import json
+
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from psycopg2.pool import ThreadedConnectionPool
 
 from config import settings
 
 
-TABLE_NAME = "NativityProduction"
-
-
 class DBService:
-    """DynamoDB service for storing and retrieving video history"""
-    
+    """PostgreSQL-backed store for video jobs and history."""
+
     def __init__(self):
-        self._table = None
-        self._dynamodb = None
-    
-    @property
-    def dynamodb(self):
-        """Lazy initialization of DynamoDB resource"""
-        if self._dynamodb is None and self.is_configured():
-            self._dynamodb = boto3.resource(
-                'dynamodb',
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-                region_name=settings.AWS_REGION
+        self._pool: Optional[ThreadedConnectionPool] = None
+
+    # ── Connection management ────────────────────────────────────────────
+    def _get_pool(self) -> Optional[ThreadedConnectionPool]:
+        """Lazily create a thread-safe connection pool (API + worker threads)."""
+        if self._pool is None and settings.DATABASE_URL:
+            self._pool = ThreadedConnectionPool(
+                minconn=1,
+                maxconn=10,
+                dsn=settings.DATABASE_URL,
             )
-        return self._dynamodb
-    
-    @property
-    def table(self):
-        """Lazy initialization of DynamoDB table"""
-        if self._table is None and self.dynamodb:
-            self._table = self.dynamodb.Table(TABLE_NAME)
-        return self._table
-    
+        return self._pool
+
     def is_configured(self) -> bool:
-        """Check if AWS credentials are configured"""
-        return bool(settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY)
-    
+        """True if a DATABASE_URL is set."""
+        return bool(settings.DATABASE_URL)
+
+    def _execute(self, query: str, params: tuple = (), *, fetch: str = None):
+        """
+        Run a query. fetch: None (no return), 'one', 'all'.
+        Returns rows as dicts (RealDictCursor). Commits/rolls back automatically.
+        """
+        pool = self._get_pool()
+        if not pool:
+            raise RuntimeError("DATABASE_URL not configured")
+        conn = pool.getconn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, params)
+                result = None
+                if fetch == "one":
+                    result = cur.fetchone()
+                elif fetch == "all":
+                    result = cur.fetchall()
+                rowcount = cur.rowcount
+            conn.commit()
+            return result, rowcount
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            pool.putconn(conn)
+
+    # ── Writes ───────────────────────────────────────────────────────────
     def save_video(
         self,
         user_id: str,
@@ -76,153 +88,103 @@ class DBService:
         subtitle_s3_key: Optional[str] = None,
         words_localized: Optional[int] = None,
         progress: Optional[int] = None,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Save a video localization job to user's history.
-        
-        Args:
-            user_id: Clerk user ID (from JWT 'sub' claim)
-            job_id: Unique job identifier
-            target_language: Language code (hindi, tamil, etc.)
-            input_file: Original S3 key
-            status: Job status (processing, needs_review, complete, failed)
-            output_url: Presigned download URL
-            whatsapp_url: WhatsApp-optimized version URL
-            file_size_mb: Output file size in MB
-            cultural_report: Gemini's cultural adaptation report
-            segments_count: Number of audio segments generated
-            draft_segments: List of segment dicts for human review
-            output_s3_key: S3 key for output file (for URL regeneration)
-            progress: Job progress percentage (0-100)
-            error_message: Error message if job failed
-            
-        Returns:
-            dict with success status
+        Upsert a job row keyed on job_id. Provided fields overwrite; optional
+        fields left as None are preserved (COALESCE) so partial updates don't
+        wipe data written by an earlier call.
         """
-        if not self.table:
-            return {"error": "DynamoDB not configured"}
+        if not self.is_configured():
+            return {"error": "Database not configured"}
 
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        now = datetime.utcnow().isoformat() + "Z"
+        params = {
+            "job_id": job_id,
+            "user_id": user_id,
+            "target_language": target_language,
+            "input_file": input_file,
+            "status": status,
+            "created_at": now,
+            "updated_at": now,
+            "output_url": output_url,
+            "output_s3_key": output_s3_key,
+            "subtitle_s3_key": subtitle_s3_key,
+            "whatsapp_url": whatsapp_url,
+            "file_size_mb": float(file_size_mb) if file_size_mb is not None else None,
+            "segments_count": segments_count,
+            "words_localized": words_localized,
+            "progress": progress,
+            "error_message": error_message,
+            "cultural_report": json.dumps(cultural_report) if cultural_report else None,
+            "cultural_analysis": json.dumps(cultural_analysis) if cultural_analysis else None,
+            "draft_segments": json.dumps(draft_segments) if draft_segments else None,
+        }
 
-        # Upsert: if a record already exists for this job_id, update it IN PLACE
-        # (reuse its PK/SK and keep existing fields) instead of writing a new row.
-        # Without this, create_job and completion each PUT a separate item, leaving
-        # duplicate rows for one job — and the job lookup could return the
-        # incomplete row, so the result card never received the output URL.
-        existing = self.get_video_by_job_id(user_id, job_id)
-        if existing:
-            item = dict(existing)
-        else:
-            item = {
-                'PK': f"USER#{user_id}",
-                'SK': f"VIDEO#{timestamp}",
-                'created_at': timestamp,
-            }
-
-        # Core fields (always set/refreshed)
-        item['job_id'] = job_id
-        item['user_id'] = user_id
-        item['target_language'] = target_language
-        item['input_file'] = input_file
-        item['status'] = status
-        item['updated_at'] = timestamp
-
-        # Add optional fields if provided
-        if output_url:
-            item['output_url'] = output_url
-        if output_s3_key:
-            item['output_s3_key'] = output_s3_key
-        if subtitle_s3_key:
-            item['subtitle_s3_key'] = subtitle_s3_key
-        if words_localized is not None:
-            item['words_localized'] = words_localized
-        if whatsapp_url:
-            item['whatsapp_url'] = whatsapp_url
-        if file_size_mb is not None:
-            item['file_size_mb'] = str(file_size_mb)  # DynamoDB prefers strings for decimals
-        if cultural_report:
-            item['cultural_report'] = json.dumps(cultural_report)
-        if cultural_analysis:
-            item['cultural_analysis'] = json.dumps(cultural_analysis)
-        if segments_count is not None:
-            item['segments_count'] = segments_count
-        if draft_segments:
-            item['draft_segments'] = json.dumps(draft_segments)
-        if progress is not None:
-            item['progress'] = progress
-        if error_message:
-            item['error_message'] = error_message
-        
+        query = """
+            INSERT INTO videos (
+                job_id, user_id, target_language, input_file, status,
+                created_at, updated_at, output_url, output_s3_key, subtitle_s3_key,
+                whatsapp_url, file_size_mb, segments_count, words_localized, progress,
+                error_message, cultural_report, cultural_analysis, draft_segments
+            ) VALUES (
+                %(job_id)s, %(user_id)s, %(target_language)s, %(input_file)s, %(status)s,
+                %(created_at)s, %(updated_at)s, %(output_url)s, %(output_s3_key)s, %(subtitle_s3_key)s,
+                %(whatsapp_url)s, %(file_size_mb)s, %(segments_count)s, %(words_localized)s, %(progress)s,
+                %(error_message)s, %(cultural_report)s, %(cultural_analysis)s, %(draft_segments)s
+            )
+            ON CONFLICT (job_id) DO UPDATE SET
+                user_id           = EXCLUDED.user_id,
+                target_language   = EXCLUDED.target_language,
+                input_file        = EXCLUDED.input_file,
+                status            = EXCLUDED.status,
+                updated_at        = EXCLUDED.updated_at,
+                output_url        = COALESCE(EXCLUDED.output_url, videos.output_url),
+                output_s3_key     = COALESCE(EXCLUDED.output_s3_key, videos.output_s3_key),
+                subtitle_s3_key   = COALESCE(EXCLUDED.subtitle_s3_key, videos.subtitle_s3_key),
+                whatsapp_url      = COALESCE(EXCLUDED.whatsapp_url, videos.whatsapp_url),
+                file_size_mb      = COALESCE(EXCLUDED.file_size_mb, videos.file_size_mb),
+                segments_count    = COALESCE(EXCLUDED.segments_count, videos.segments_count),
+                words_localized   = COALESCE(EXCLUDED.words_localized, videos.words_localized),
+                progress          = COALESCE(EXCLUDED.progress, videos.progress),
+                error_message     = COALESCE(EXCLUDED.error_message, videos.error_message),
+                cultural_report   = COALESCE(EXCLUDED.cultural_report, videos.cultural_report),
+                cultural_analysis = COALESCE(EXCLUDED.cultural_analysis, videos.cultural_analysis),
+                draft_segments    = COALESCE(EXCLUDED.draft_segments, videos.draft_segments)
+        """
         try:
-            self.table.put_item(Item=item)
-            return {
-                "success": True,
-                "pk": item['PK'],
-                "sk": item['SK']
-            }
-        except ClientError as e:
+            self._execute(query, params)
+            return {"success": True, "job_id": job_id}
+        except Exception as e:
             return {"error": str(e)}
-    
+
     def update_job_segments(
         self,
         user_id: str,
         job_id: str,
         segments: List[Dict[str, Any]],
-        status: Optional[str] = None
+        status: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Update the segments for a job (after human review/editing).
-        
-        Args:
-            user_id: Clerk user ID
-            job_id: Job ID to update
-            segments: Updated list of segment dicts
-            status: Optional new status to set
-            
-        Returns:
-            dict with success status or error
-        """
-        if not self.table:
-            return {"error": "DynamoDB not configured"}
-        
-        # First, find the item by job_id
-        # get_video_by_job_id returns the raw DynamoDB item dict, or None
-        raw_item = self.get_video_by_job_id(user_id, job_id)
-        if not raw_item:
-            return {"error": "Video not found"}
+        """Update the segments (and optionally status) for a job."""
+        if not self.is_configured():
+            return {"error": "Database not configured"}
 
-        pk = raw_item["PK"]
-        sk = raw_item["SK"]
-        
-        # Build update expression
-        update_expr = "SET draft_segments = :segments, updated_at = :updated"
-        expr_values = {
-            ":segments": json.dumps(segments),
-            ":updated": datetime.utcnow().isoformat() + "Z"
-        }
-        
+        now = datetime.utcnow().isoformat() + "Z"
+        sets = ["draft_segments = %s", "updated_at = %s"]
+        params: list = [json.dumps(segments), now]
         if status:
-            update_expr += ", #status = :status"
-            expr_values[":status"] = status
-            expr_names = {"#status": "status"}
-        else:
-            expr_names = None
-        
+            sets.append("status = %s")
+            params.append(status)
+        params.extend([user_id, job_id])
+        query = f"UPDATE videos SET {', '.join(sets)} WHERE user_id = %s AND job_id = %s"
         try:
-            update_kwargs = {
-                "Key": {"PK": pk, "SK": sk},
-                "UpdateExpression": update_expr,
-                "ExpressionAttributeValues": expr_values
-            }
-            if expr_names:
-                update_kwargs["ExpressionAttributeNames"] = expr_names
-            
-            self.table.update_item(**update_kwargs)
+            _, rowcount = self._execute(query, tuple(params))
+            if rowcount == 0:
+                return {"error": "Video not found"}
             return {"success": True, "job_id": job_id}
-        except ClientError as e:
+        except Exception as e:
             return {"error": str(e)}
-    
+
     def update_job_status(
         self,
         user_id: str,
@@ -233,322 +195,160 @@ class DBService:
         subtitle_s3_key: Optional[str] = None,
         approved_segments: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """
-        Update the status of a job and optionally set output URL.
-        
-        Args:
-            user_id: Clerk user ID
-            job_id: Job ID to update
-            status: New status
-            output_url: Optional output URL to set
-            output_s3_key: Optional S3 key for output
-            
-        Returns:
-            dict with success status or error
-        """
-        if not self.table:
-            return {"error": "DynamoDB not configured"}
-        
-        # Find the item by job_id
-        # get_video_by_job_id returns the raw DynamoDB item dict, or None
-        raw_item = self.get_video_by_job_id(user_id, job_id)
-        if not raw_item:
-            return {"error": "Video not found"}
+        """Update status and optional output fields for a job."""
+        if not self.is_configured():
+            return {"error": "Database not configured"}
 
-        pk = raw_item["PK"]
-        sk = raw_item["SK"]
-        
-        # Build update expression
-        update_expr = "SET #status = :status, updated_at = :updated"
-        expr_values = {
-            ":status": status,
-            ":updated": datetime.utcnow().isoformat() + "Z"
-        }
-        expr_names = {"#status": "status"}
-        
+        now = datetime.utcnow().isoformat() + "Z"
+        sets = ["status = %s", "updated_at = %s"]
+        params: list = [status, now]
         if output_url:
-            update_expr += ", output_url = :output_url"
-            expr_values[":output_url"] = output_url
+            sets.append("output_url = %s")
+            params.append(output_url)
         if output_s3_key:
-            update_expr += ", output_s3_key = :output_s3_key"
-            expr_values[":output_s3_key"] = output_s3_key
+            sets.append("output_s3_key = %s")
+            params.append(output_s3_key)
         if subtitle_s3_key:
-            update_expr += ", subtitle_s3_key = :subtitle_s3_key"
-            expr_values[":subtitle_s3_key"] = subtitle_s3_key
+            sets.append("subtitle_s3_key = %s")
+            params.append(subtitle_s3_key)
         if approved_segments is not None:
-            update_expr += ", draft_segments = :draft_segments"
-            expr_values[":draft_segments"] = json.dumps(approved_segments)
-        
+            sets.append("draft_segments = %s")
+            params.append(json.dumps(approved_segments))
+        params.extend([user_id, job_id])
+        query = f"UPDATE videos SET {', '.join(sets)} WHERE user_id = %s AND job_id = %s"
         try:
-            self.table.update_item(
-                Key={"PK": pk, "SK": sk},
-                UpdateExpression=update_expr,
-                ExpressionAttributeValues=expr_values,
-                ExpressionAttributeNames=expr_names
-            )
+            _, rowcount = self._execute(query, tuple(params))
+            if rowcount == 0:
+                return {"error": "Video not found"}
             return {"success": True, "job_id": job_id}
-        except ClientError as e:
+        except Exception as e:
             return {"error": str(e)}
-    
-    def get_user_history(
-        self,
-        user_id: str,
-        limit: int = 20
-    ) -> Dict[str, Any]:
-        """
-        Get a user's video localization history.
-        
-        Args:
-            user_id: Clerk user ID
-            limit: Maximum number of items to return (default 20)
-            
-        Returns:
-            dict with 'videos' list or 'error'
-        """
-        if not self.table:
-            return {"error": "DynamoDB not configured"}
-        
-        try:
-            response = self.table.query(
-                KeyConditionExpression='PK = :pk AND begins_with(SK, :sk_prefix)',
-                ExpressionAttributeValues={
-                    ':pk': f"USER#{user_id}",
-                    ':sk_prefix': 'VIDEO#'
-                },
-                ScanIndexForward=False,  # Newest first
-                Limit=limit
-            )
-            
-            # Parse and clean up items
-            videos = []
-            for item in response.get('Items', []):
-                video = {
-                    'job_id': item.get('job_id'),
-                    'target_language': item.get('target_language'),
-                    'input_file': item.get('input_file'),
-                    'status': item.get('status'),
-                    'created_at': item.get('created_at'),
-                    'output_url': item.get('output_url'),
-                    'output_s3_key': item.get('output_s3_key'),  # needed to regenerate fresh presigned URLs
-                    'subtitle_s3_key': item.get('subtitle_s3_key'),
-                    'words_localized': int(item['words_localized']) if item.get('words_localized') else None,
-                    'whatsapp_url': item.get('whatsapp_url'),
-                    'file_size_mb': float(item['file_size_mb']) if item.get('file_size_mb') else None,
-                    'segments_count': item.get('segments_count'),
-                }
-                
-                # Parse cultural report if present
-                if item.get('cultural_report'):
-                    try:
-                        video['cultural_report'] = json.loads(item['cultural_report'])
-                    except json.JSONDecodeError:
-                        video['cultural_report'] = None
-                
-                videos.append(video)
-            
-            return {
-                "success": True,
-                "videos": videos,
-                "count": len(videos)
-            }
-            
-        except ClientError as e:
-            return {"error": str(e)}
-    
-    def get_video_by_job_id(
-        self,
-        user_id: str,
-        job_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Get a specific video by job ID for a user.
-        Note: This requires scanning the user's items.
-        """
-        if not self.table:
-            return None
-        
-        try:
-            response = self.table.query(
-                KeyConditionExpression='PK = :pk AND begins_with(SK, :sk_prefix)',
-                FilterExpression='job_id = :job_id',
-                ExpressionAttributeValues={
-                    ':pk': f"USER#{user_id}",
-                    ':sk_prefix': 'VIDEO#',
-                    ':job_id': job_id
-                }
-            )
-            
-            items = response.get('Items', [])
-            return items[0] if items else None
-            
-        except ClientError:
-            return None
-    
-    def delete_video(
-        self,
-        user_id: str,
-        job_id: str
-    ) -> Dict[str, Any]:
-        """
-        Delete a video record from user's history.
-        
-        Args:
-            user_id: Clerk user ID
-            job_id: Job ID to delete
-            
-        Returns:
-            dict with success status or error
-        """
-        if not self.table:
-            return {"error": "DynamoDB not configured"}
-        
-        # First, find the item to get its SK (sort key)
-        video = self.get_video_by_job_id(user_id, job_id)
-        if not video:
-            return {"error": "Video not found or not owned by user"}
-        
-        try:
-            # Delete the item using PK and SK
-            self.table.delete_item(
-                Key={
-                    'PK': video.get('PK') or f"USER#{user_id}",
-                    'SK': video.get('SK')
-                }
-            )
-            
-            return {
-                "success": True,
-                "deleted_job_id": job_id
-            }
-            
-        except ClientError as e:
-            return {"error": str(e)}
-    
-    def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get a job by ID across all users (for system operations)
-        Note: This is expensive as it requires scanning
-        
-        Args:
-            job_id: Job ID to find
-            
-        Returns:
-            dict with job data or None
-        """
-        if not self.table:
-            return None
 
-        try:
-            # Scan and filter by job_id across all users. NOTE: do NOT use Limit=1
-            # here — DynamoDB applies Limit BEFORE the FilterExpression, so Limit=1
-            # reads a single row, filters it out, and returns nothing unless the
-            # target job is literally the first item scanned. Paginate instead.
-            scan_kwargs = {
-                'FilterExpression': 'job_id = :job_id',
-                'ExpressionAttributeValues': {':job_id': job_id},
-            }
-            while True:
-                response = self.table.scan(**scan_kwargs)
-                items = response.get('Items', [])
-                if items:
-                    return items[0]
-                last_key = response.get('LastEvaluatedKey')
-                if not last_key:
-                    return None
-                scan_kwargs['ExclusiveStartKey'] = last_key
-
-        except ClientError:
-            return None
-    
     def update_job_progress(
         self,
         user_id: str,
         job_id: str,
         progress: int,
         message: str,
-        status: Optional[str] = None
+        status: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Update job progress and message
-        
-        Args:
-            user_id: User ID
-            job_id: Job ID
-            progress: Progress percentage (0-100)
-            message: Status message
-            status: Optional new status
-            
-        Returns:
-            dict with success status
-        """
-        if not self.table:
-            return {"error": "DynamoDB not configured"}
-        
-        # Find the item
-        raw_item = self.get_video_by_job_id(user_id, job_id)
-        if not raw_item:
-            return {"error": "Job not found"}
+        """Update progress + message (and optionally status) for a job."""
+        if not self.is_configured():
+            return {"error": "Database not configured"}
 
-        pk = raw_item["PK"]
-        sk = raw_item["SK"]
-        
-        # Build update expression
-        update_expr = "SET progress = :progress, message = :message, updated_at = :updated"
-        expr_values = {
-            ":progress": progress,
-            ":message": message,
-            ":updated": datetime.utcnow().isoformat() + "Z"
-        }
-        expr_names = None
-        
+        now = datetime.utcnow().isoformat() + "Z"
+        sets = ["progress = %s", "message = %s", "updated_at = %s"]
+        params: list = [progress, message, now]
         if status:
-            update_expr += ", #status = :status"
-            expr_values[":status"] = status
-            expr_names = {"#status": "status"}
-        
+            sets.append("status = %s")
+            params.append(status)
+        params.extend([user_id, job_id])
+        query = f"UPDATE videos SET {', '.join(sets)} WHERE user_id = %s AND job_id = %s"
         try:
-            update_kwargs = {
-                "Key": {"PK": pk, "SK": sk},
-                "UpdateExpression": update_expr,
-                "ExpressionAttributeValues": expr_values
-            }
-            if expr_names:
-                update_kwargs["ExpressionAttributeNames"] = expr_names
-            
-            self.table.update_item(**update_kwargs)
+            _, rowcount = self._execute(query, tuple(params))
+            if rowcount == 0:
+                return {"error": "Job not found"}
             return {"success": True, "job_id": job_id}
-            
-        except ClientError as e:
+        except Exception as e:
             return {"error": str(e)}
-    
-    def get_active_jobs(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """
-        Get all active jobs across all users (for system monitoring)
-        
-        Args:
-            limit: Maximum number of jobs to return
-            
-        Returns:
-            list of active job dictionaries
-        """
-        if not self.table:
-            return []
-        
+
+    def delete_video(self, user_id: str, job_id: str) -> Dict[str, Any]:
+        """Delete a job row (only if owned by user)."""
+        if not self.is_configured():
+            return {"error": "Database not configured"}
         try:
-            # Scan for active jobs (expensive operation, use sparingly)
-            response = self.table.scan(
-                FilterExpression='#status IN (:pending, :processing)',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':pending': 'pending',
-                    ':processing': 'processing'
-                },
-                Limit=limit
+            _, rowcount = self._execute(
+                "DELETE FROM videos WHERE user_id = %s AND job_id = %s",
+                (user_id, job_id),
             )
-            
-            return response.get('Items', [])
-            
-        except ClientError as e:
+            if rowcount == 0:
+                return {"error": "Video not found or not owned by user"}
+            return {"success": True, "deleted_job_id": job_id}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ── Reads ────────────────────────────────────────────────────────────
+    def get_user_history(self, user_id: str, limit: int = 20) -> Dict[str, Any]:
+        """Return a user's videos (newest first)."""
+        if not self.is_configured():
+            return {"error": "Database not configured"}
+        try:
+            rows, _ = self._execute(
+                """
+                SELECT * FROM videos
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (user_id, limit),
+                fetch="all",
+            )
+            videos = []
+            for row in (rows or []):
+                video = {
+                    "job_id": row.get("job_id"),
+                    "target_language": row.get("target_language"),
+                    "input_file": row.get("input_file"),
+                    "status": row.get("status"),
+                    "created_at": row.get("created_at"),
+                    "output_url": row.get("output_url"),
+                    "output_s3_key": row.get("output_s3_key"),
+                    "subtitle_s3_key": row.get("subtitle_s3_key"),
+                    "words_localized": int(row["words_localized"]) if row.get("words_localized") is not None else None,
+                    "whatsapp_url": row.get("whatsapp_url"),
+                    "file_size_mb": float(row["file_size_mb"]) if row.get("file_size_mb") is not None else None,
+                    "segments_count": row.get("segments_count"),
+                }
+                if row.get("cultural_report"):
+                    try:
+                        video["cultural_report"] = json.loads(row["cultural_report"])
+                    except (json.JSONDecodeError, TypeError):
+                        video["cultural_report"] = None
+                videos.append(video)
+            return {"success": True, "videos": videos, "count": len(videos)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_video_by_job_id(self, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        """Return the raw row for a job owned by user (JSON cols are strings)."""
+        if not self.is_configured():
+            return None
+        try:
+            row, _ = self._execute(
+                "SELECT * FROM videos WHERE user_id = %s AND job_id = %s",
+                (user_id, job_id),
+                fetch="one",
+            )
+            return dict(row) if row else None
+        except Exception:
+            return None
+
+    def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Return the raw row for a job across all users (JSON cols are strings)."""
+        if not self.is_configured():
+            return None
+        try:
+            row, _ = self._execute(
+                "SELECT * FROM videos WHERE job_id = %s",
+                (job_id,),
+                fetch="one",
+            )
+            return dict(row) if row else None
+        except Exception:
+            return None
+
+    def get_active_jobs(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Return jobs that are still pending/processing."""
+        if not self.is_configured():
+            return []
+        try:
+            rows, _ = self._execute(
+                "SELECT * FROM videos WHERE status IN ('pending', 'processing') LIMIT %s",
+                (limit,),
+                fetch="all",
+            )
+            return [dict(r) for r in (rows or [])]
+        except Exception as e:
             print(f"Error getting active jobs: {e}")
             return []
 

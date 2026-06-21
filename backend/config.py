@@ -103,6 +103,9 @@ class Settings:
     
     # Redis Configuration
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+    # PostgreSQL (job + history storage)
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
     
     # Application Settings
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "./uploads")
