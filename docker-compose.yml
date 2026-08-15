@@ -1,7 +1,6 @@
-version: '3.8'
 
 services:
-  # Redis for job caching and real-time updates
+  # Redis — Celery broker + job status cache
   redis:
     image: redis:7-alpine
     container_name: nativity-redis-dev
@@ -17,7 +16,7 @@ services:
       retries: 3
     restart: unless-stopped
 
-  # Backend API (Development with hot reload)
+  # Backend API
   api:
     build:
       context: ./backend
@@ -28,10 +27,15 @@ services:
       - "8000:8000"
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      # Cloudflare R2
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
+      - R2_PUBLIC_URL=${R2_PUBLIC_URL}
+      # Supabase PostgreSQL
+      - DATABASE_URL=${DATABASE_URL}
+      # AI / Auth
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - CLERK_ISSUER_URL=${CLERK_ISSUER_URL}
       - PYTHONUNBUFFERED=1
@@ -50,7 +54,7 @@ services:
     restart: unless-stopped
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
-  # Background Video Processing Worker (Development)
+  # Celery worker — processes video localization jobs
   worker:
     build:
       context: ./backend
@@ -59,10 +63,15 @@ services:
     container_name: nativity-worker-dev
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      # Cloudflare R2
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
+      - R2_PUBLIC_URL=${R2_PUBLIC_URL}
+      # Supabase PostgreSQL
+      - DATABASE_URL=${DATABASE_URL}
+      # AI
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - PYTHONUNBUFFERED=1
     volumes:
@@ -71,20 +80,24 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      api:
-        condition: service_healthy
     restart: unless-stopped
-    command: ["python", "start_worker.py", "--workers", "1", "--worker-prefix", "dev-worker"]
+    # Run Celery worker directly (concurrency=1 for dev — safe on RAM)
+    command: [
+      "celery", "-A", "celery_app", "worker",
+      "--loglevel=info", "--concurrency=1",
+      "-Q", "high,default,low"
+    ]
 
-  # Frontend (Development with hot reload)
+  # Next.js Frontend
   frontend:
     build:
       context: ./frontend
       dockerfile: dockerfile
-      target: runner
+      target: base
     container_name: nativity-frontend-dev
     ports:
       - "3000:3000"
+    command: sh -c "npm install && npm run dev"
     environment:
       - NODE_ENV=development
       - NEXT_PUBLIC_API_URL=http://localhost:8000

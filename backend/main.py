@@ -23,50 +23,26 @@ from services.queue_service import queue_service
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle management"""
-    # Startup
     import os
     print("\n" + "="*50)
     print("🇮🇳 Nativity.ai starting up...")
     print(f"   📂 CWD: {os.getcwd()}")
     print("="*50)
     print(f"   ✓ Gemini API: {'✅ Ready' if gemini_service.is_configured() else '❌ Not configured'}")
-    print(f"   ✓ AWS S3:     {'✅ Ready' if s3_service.is_configured() else '❌ Not configured'}")
-    print(f"   ✓ Redis:      {'✅ Ready' if redis_service.is_available() else '⚠️  Not available (will use DynamoDB only)'}")
-    print(f"   ✓ Queue:      {'✅ Ready' if queue_service.is_available() else '⚠️  Using local queue (not suitable for production)'}")
+    print(f"   ✓ R2 Storage: {'✅ Ready' if s3_service.is_configured() else '❌ Not configured'}")
+    print(f"   ✓ Redis/Celery: {'✅ Ready' if redis_service.is_available() else '⚠️  Not available (job status cache disabled)'}")
+    print(f"   ✓ Queue:      {'✅ Celery+Redis' if queue_service.is_available() else '⚠️  Check Redis connection'}")
     print(f"   ✓ FFmpeg:     {'✅ Ready' if ffmpeg_service.is_available() else '❌ Not installed'}")
     print(f"   ✓ TTS:        ✅ Ready (edge-tts)")
-    
+
     if not ffmpeg_service.is_available():
         print("\n   ⚠️  WARNING: FFmpeg not found!")
         print("   Video processing will not work without FFmpeg.")
         print("   Install: https://ffmpeg.org/download.html")
 
-    # ─────────────────────────────────────────────────────────────
-    # In-process worker fallback
-    # When no external SQS queue is configured, jobs land in a local
-    # in-memory queue. Start a worker thread here so this single service
-    # also PROCESSES jobs instead of leaving them stuck at "queued".
-    # (Runs in its own thread + event loop so the heavy Gemini/FFmpeg
-    # work doesn't block the API from serving status-polling requests.)
-    # For real scale, set VIDEO_PROCESSING_QUEUE_URL and run a separate
-    # worker service (python start_worker.py); this block then no-ops.
-    # ─────────────────────────────────────────────────────────────
-    if not queue_service.is_available():
-        import threading
-        import asyncio as _asyncio
-        from workers.video_processor import VideoProcessor
-
-        def _run_inprocess_worker():
-            worker = VideoProcessor(worker_id="inproc-1")
-            _asyncio.run(worker.start())
-
-        threading.Thread(target=_run_inprocess_worker, daemon=True).start()
-        print("   ✓ In-process worker: ✅ Started (local queue mode)")
-
     print("="*50 + "\n")
-
     yield
-    
+
     # Shutdown
     print("\n👋 Nativity.ai shutting down...")
 
@@ -134,13 +110,13 @@ async def health_check():
         s3_service.is_configured() and
         ffmpeg_service.is_available()
     )
-    
+
     return {
         "status": "ok" if all_services_ready else "degraded",
         "services": {
             "api": "running",
             "gemini": "ready" if gemini_service.is_configured() else "not configured",
-            "aws_s3": "ready" if s3_service.is_configured() else "not configured",
+            "r2_storage": "ready" if s3_service.is_configured() else "not configured",
             "redis": job_service_health["redis"]["status"],
             "database": job_service_health["database"]["status"],
             "queue": queue_service_health["status"],
@@ -166,10 +142,9 @@ async def config_status():
             "configured": gemini_service.is_configured(),
             "model": "gemini-2.0-flash" if gemini_service.is_configured() else None
         },
-        "aws": {
+        "r2_storage": {
             "configured": s3_service.is_configured(),
-            "region": settings.AWS_REGION if s3_service.is_configured() else None,
-            "bucket": settings.S3_BUCKET_NAME if s3_service.is_configured() else None
+            "bucket": settings.R2_BUCKET_NAME if s3_service.is_configured() else None
         },
         "ffmpeg": {
             "installed": ffmpeg_service.is_available(),

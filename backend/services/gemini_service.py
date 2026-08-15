@@ -16,8 +16,8 @@ from config import settings
 
 # Retry / timeout configuration
 MAX_RETRIES = 3                    # Max attempts before giving up
-INITIAL_RETRY_DELAY_SECONDS = 5   # Doubles with each attempt (5s → 10s → 20s)
-API_TIMEOUT_SECONDS = 60           # Hard timeout per API call
+INITIAL_RETRY_DELAY_SECONDS = 15  # Doubles with each attempt (15s → 30s → 60s)
+API_TIMEOUT_SECONDS = 180          # Hard timeout per API call (Gemini 2.5-flash needs time for video)
 
 # Model selection - Gemini 2.0 Flash (stable GA, high availability)
 MODEL_NAME = "gemini-2.5-flash"

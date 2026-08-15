@@ -222,28 +222,32 @@ class JobService:
         
         # Store results in Redis for fast access
         self.redis.set_job_results(job_id, results)
-        
-        # Update DynamoDB with final results
-        current_job = self.get_job_status(job_id)
-        if current_job:
-            self.db.save_video(
-                user_id=user_id,
-                job_id=job_id,
-                target_language=current_job.target_language,
-                input_file=current_job.input_file,
-                status="complete",
-                output_url=output_url,
-                output_s3_key=output_s3_key,
-                whatsapp_url=whatsapp_url,
-                file_size_mb=file_size_mb,
-                progress=100,
-                cultural_report=results.get("cultural_report"),
-                cultural_analysis=results.get("cultural_analysis"),
-                segments_count=results.get("segments_count"),
-                draft_segments=results.get("segments"),
-                subtitle_s3_key=results.get("subtitle_s3_key"),
-                words_localized=results.get("words_localized")
-            )
+
+        # Fetch the canonical record from DB (has input_file + target_language from create_job)
+        db_record = self.db.get_job_by_id(job_id)
+        target_language = (db_record or {}).get("target_language", "")
+        input_file = (db_record or {}).get("input_file", "")
+
+        # Store the S3 key as output_url so it never expires;
+        # the history route generates a fresh presigned URL on read.
+        self.db.save_video(
+            user_id=user_id,
+            job_id=job_id,
+            target_language=target_language,
+            input_file=input_file,
+            status="complete",
+            output_url=output_s3_key,   # store key, not expiring presigned URL
+            output_s3_key=output_s3_key,
+            whatsapp_url=whatsapp_url,
+            file_size_mb=file_size_mb,
+            progress=100,
+            cultural_report=results.get("cultural_report"),
+            cultural_analysis=results.get("cultural_analysis"),
+            segments_count=results.get("segments_count"),
+            draft_segments=results.get("segments"),
+            subtitle_s3_key=results.get("subtitle_s3_key"),
+            words_localized=results.get("words_localized")
+        )
         
         return True
     
@@ -293,9 +297,18 @@ class JobService:
         db_job = self.db.get_job_by_id(job_id)
         if db_job:
             import json
+            from services.s3_service import s3_service
+
+            # Prefer generating a fresh presigned URL from the S3 key
+            output_s3_key = db_job.get("output_s3_key") or db_job.get("output_url")
+            fresh_url = s3_service.create_presigned_url(output_s3_key) if output_s3_key else None
+
+            whatsapp_key = db_job.get("whatsapp_url")  # stored as key or URL
+            fresh_whatsapp = s3_service.create_presigned_url(whatsapp_key) if whatsapp_key else None
+
             results: Dict[str, Any] = {
-                "output_url": db_job.get("output_url"),
-                "whatsapp_url": db_job.get("whatsapp_url"),
+                "output_url": fresh_url or db_job.get("output_url"),
+                "whatsapp_url": fresh_whatsapp or db_job.get("whatsapp_url"),
             }
             if db_job.get("file_size_mb"):
                 try:

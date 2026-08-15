@@ -1,35 +1,30 @@
--- Nativity.ai — PostgreSQL schema
--- One row per localization job. JSON blobs are stored as TEXT (json.dumps output)
--- to match the previous store, so application code reads them with json.loads.
+-- Nativity.ai PostgreSQL schema
+-- Run via: python scripts/setup_postgres.py
 
 CREATE TABLE IF NOT EXISTS videos (
     job_id            TEXT PRIMARY KEY,
     user_id           TEXT NOT NULL,
-    target_language   TEXT,
-    input_file        TEXT,
+    input_file        TEXT NOT NULL DEFAULT '',
+    target_language   TEXT NOT NULL DEFAULT '',
     status            TEXT NOT NULL DEFAULT 'pending',
-    message           TEXT NOT NULL DEFAULT '',
-    progress          INTEGER,
+    progress          INTEGER DEFAULT 0,
+    message           TEXT,
     error_message     TEXT,
-
     output_url        TEXT,
     output_s3_key     TEXT,
-    subtitle_s3_key   TEXT,
     whatsapp_url      TEXT,
-    file_size_mb      DOUBLE PRECISION,
+    subtitle_s3_key   TEXT,
+    file_size_mb      NUMERIC(10,2),
     segments_count    INTEGER,
     words_localized   INTEGER,
-
-    cultural_report   TEXT,   -- json.dumps(dict)
-    cultural_analysis TEXT,   -- json.dumps(list)
-    draft_segments    TEXT,   -- json.dumps(list)
-
-    created_at        TEXT,   -- ISO-8601 string, e.g. 2026-06-21T10:00:00Z
+    draft_segments    TEXT,
+    approved_segments TEXT,
+    cultural_report   TEXT,
+    cultural_analysis TEXT,
+    created_at        TEXT,
     updated_at        TEXT
 );
 
--- Fast "my history, newest first"
-CREATE INDEX IF NOT EXISTS idx_videos_user_created ON videos (user_id, created_at DESC);
-
--- Fast "active jobs" scans
-CREATE INDEX IF NOT EXISTS idx_videos_status ON videos (status);
+CREATE INDEX IF NOT EXISTS idx_videos_user_id    ON videos (user_id);
+CREATE INDEX IF NOT EXISTS idx_videos_status     ON videos (status);
+CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos (created_at DESC);

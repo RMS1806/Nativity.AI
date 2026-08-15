@@ -1,6 +1,16 @@
 """
-AWS S3 Service for Nativity.ai
-Handles file uploads, downloads, and presigned URL generation
+Cloudflare R2 Storage Service for Nativity.ai
+Drop-in replacement for the previous AWS S3 service.
+
+R2 is S3-compatible — boto3 works unchanged, just with a different
+endpoint_url and credentials (R2 API tokens instead of AWS keys).
+
+Required env vars:
+  R2_ACCOUNT_ID          — found in R2 dashboard
+  R2_ACCESS_KEY_ID       — R2 API token ID
+  R2_SECRET_ACCESS_KEY   — R2 API token secret
+  R2_BUCKET_NAME         — bucket name
+  R2_PUBLIC_URL          — public bucket URL (e.g. https://pub-xxx.r2.dev)
 """
 
 import boto3
@@ -13,163 +23,124 @@ from config import settings
 
 class S3Service:
     """
-    Service for interacting with AWS S3
-    Handles video storage and retrieval
+    Storage service backed by Cloudflare R2 (S3-compatible).
+    All method signatures are identical to the previous S3Service
+    so no route or worker code needs to change.
     """
-    
+
     def __init__(self):
-        self.bucket_name = settings.S3_BUCKET_NAME
-        self.region = settings.AWS_REGION
-        self._client = None
-    
+        self.bucket_name = settings.R2_BUCKET_NAME
+        self.public_url  = settings.R2_PUBLIC_URL.rstrip("/") if settings.R2_PUBLIC_URL else ""
+        self._client     = None
+
     @property
     def client(self):
-        """Lazy initialization of S3 client"""
+        """Lazy R2 client — uses boto3 with a custom endpoint_url."""
         if self._client is None:
+            endpoint = f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
             self._client = boto3.client(
-                's3',
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-                region_name=self.region,
-                config=Config(signature_version='s3v4', s3={'addressing_style': 'virtual'})
+                "s3",
+                endpoint_url=endpoint,
+                aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+                region_name="auto",
+                config=Config(signature_version="s3v4"),
             )
         return self._client
-    
+
     def is_configured(self) -> bool:
-        """Check if S3 is properly configured"""
+        """Check if R2 is properly configured."""
         return bool(
-            settings.AWS_ACCESS_KEY_ID and 
-            settings.AWS_SECRET_ACCESS_KEY and 
-            settings.S3_BUCKET_NAME
+            settings.R2_ACCOUNT_ID
+            and settings.R2_ACCESS_KEY_ID
+            and settings.R2_SECRET_ACCESS_KEY
+            and settings.R2_BUCKET_NAME
         )
     
     def generate_presigned_upload_url(
-        self, 
-        file_name: str, 
+        self,
+        file_name: str,
         content_type: str = "video/mp4",
         expires_in: int = 3600
     ) -> dict:
         """
-        Generate a presigned URL for direct browser upload to S3
-        
-        Args:
-            file_name: Name of the file to upload
-            content_type: MIME type of the file
-            expires_in: URL expiration time in seconds
-        
-        Returns:
-            dict with upload_url and file_key
+        Generate a presigned PUT URL for direct browser upload to R2.
+        The browser PUTs the video file directly — the API server is not in the data path.
         """
         if not self.is_configured():
-            return {"error": "S3 not configured"}
-        
+            return {"error": "R2 storage not configured"}
+
         file_key = f"uploads/{file_name}"
-        
+
         try:
             presigned_url = self.client.generate_presigned_url(
-                'put_object',
+                "put_object",
                 Params={
-                    'Bucket': self.bucket_name,
-                    'Key': file_key,
-                    'ContentType': content_type
+                    "Bucket": self.bucket_name,
+                    "Key": file_key,
+                    "ContentType": content_type,
                 },
-                ExpiresIn=expires_in
+                ExpiresIn=expires_in,
             )
-            
-            # Debug logging for URL troubleshooting
-            print(f"Generated S3 URL: {presigned_url}")
-            
+
             return {
                 "upload_url": presigned_url,
                 "file_key": file_key,
                 "bucket": self.bucket_name,
-                "expires_in": expires_in
+                "expires_in": expires_in,
             }
         except ClientError as e:
             return {"error": str(e)}
     
     def generate_presigned_download_url(
-        self, 
-        file_key: str, 
+        self,
+        file_key: str,
         expires_in: int = 3600
     ) -> dict:
-        """
-        Generate a presigned URL for downloading/streaming a file
-        
-        Args:
-            file_key: S3 key of the file
-            expires_in: URL expiration time in seconds
-        
-        Returns:
-            dict with download_url
-        """
+        """Generate a presigned GET URL for downloading / streaming a file from R2."""
         if not self.is_configured():
-            return {"error": "S3 not configured"}
-        
+            return {"error": "R2 storage not configured"}
+
         try:
             presigned_url = self.client.generate_presigned_url(
-                'get_object',
-                Params={
-                    'Bucket': self.bucket_name,
-                    'Key': file_key
-                },
-                ExpiresIn=expires_in
+                "get_object",
+                Params={"Bucket": self.bucket_name, "Key": file_key},
+                ExpiresIn=expires_in,
             )
-            
             return {
                 "download_url": presigned_url,
                 "file_key": file_key,
-                "expires_in": expires_in
+                "expires_in": expires_in,
             }
         except ClientError as e:
             return {"error": str(e)}
     
     def create_presigned_url(self, object_name: str, expiration: int = 3600) -> Optional[str]:
         """
-        Generate a presigned URL to share an S3 object.
-        If CLOUDFRONT_DOMAIN is set, the S3 domain is swapped for the CloudFront
-        domain so all video traffic is served through the CDN.
-
-        Args:
-            object_name: S3 key or full URL of the object
-            expiration: URL expiration time in seconds
-
-        Returns:
-            Presigned URL string (CloudFront or S3) or None if error
+        Generate a presigned GET URL for an R2 object.
+        If R2_PUBLIC_URL is set, returns a plain public CDN URL instead
+        (no expiry, suitable for publicly-accessible buckets).
         """
         if not object_name or not self.is_configured():
             return None
 
         try:
-            # Handle full URLs stored by mistake — extract the bare S3 key
+            # Strip any accidental full-URL prefix — keep bare key only
+            if ".r2.cloudflarestorage.com" in object_name or ".r2.dev" in object_name:
+                object_name = object_name.split(".com/")[-1].split("?")[0]
             if "amazonaws.com" in object_name:
                 object_name = object_name.split(".com/")[-1].split("?")[0]
 
-            url = self.client.generate_presigned_url(
-                'get_object',
-                Params={'Bucket': self.bucket_name, 'Key': object_name},
-                ExpiresIn=expiration
+            # If bucket is public, serve via public URL (no expiry)
+            if self.public_url:
+                return f"{self.public_url}/{object_name}"
+
+            # Otherwise, generate a time-limited presigned URL
+            return self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket_name, "Key": object_name},
+                ExpiresIn=expiration,
             )
-
-            # Swap S3 domain for CloudFront domain if configured
-            cloudfront_domain = os.environ.get('CLOUDFRONT_DOMAIN')
-            if cloudfront_domain and url:
-                from urllib.parse import urlparse
-
-                parsed_url = urlparse(url)
-
-                # Strip any accidental scheme prefix from the env var value
-                clean_cf_domain = (
-                    cloudfront_domain
-                    .replace('https://', '')
-                    .replace('http://', '')
-                    .strip('/')
-                )
-
-                # Replace only the netloc so the path + secure query params are intact
-                url = url.replace(parsed_url.netloc, clean_cf_domain)
-
-            return url
 
         except Exception as e:
             print(f"Error generating presigned URL for {object_name}: {e}")

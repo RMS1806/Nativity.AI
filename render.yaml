@@ -1,0 +1,85 @@
+services:
+  # ────────────────────────────────────────────────────────
+  # 1. Web API Service (FastAPI)
+  # ────────────────────────────────────────────────────────
+  - type: web
+    name: nativity-api
+    env: python
+    buildCommand: |
+      cd backend
+      pip install -r requirements.txt
+    startCommand: |
+      cd backend
+      uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+      - key: CLERK_ISSUER_URL
+        sync: false
+
+  # ────────────────────────────────────────────────────────
+  # 2. Background Worker Service (Celery + FFmpeg)
+  # ────────────────────────────────────────────────────────
+  - type: worker
+    name: nativity-worker
+    # Render's Python environment doesn't include FFmpeg by default.
+    # We must use Docker for the worker to install FFmpeg.
+    env: docker
+    dockerfilePath: ./backend/dockerfile.worker
+    dockerContext: ./backend
+    startCommand: "celery -A celery_app worker --loglevel=info --concurrency=1 -Q high,default,low"
+    envVars:
+      - key: GOOGLE_API_KEY
+        fromService:
+          name: nativity-api
+          type: web
+          envVarKey: GOOGLE_API_KEY
+      - key: DATABASE_URL
+        fromService:
+          name: nativity-api
+          type: web
+          envVarKey: DATABASE_URL
+      - key: REDIS_URL
+        fromService:
+          name: nativity-api
+          type: web
+          envVarKey: REDIS_URL
+      - key: R2_ACCOUNT_ID
+        fromService:
+          name: nativity-api
+          type: web
+          envVarKey: R2_ACCOUNT_ID
+      - key: R2_ACCESS_KEY_ID
+        fromService:
+          name: nativity-api
+          type: web
+          envVarKey: R2_ACCESS_KEY_ID
+      - key: R2_SECRET_ACCESS_KEY
+        fromService:
+          name: nativity-api
+          type: web
+          envVarKey: R2_SECRET_ACCESS_KEY
+      - key: R2_BUCKET_NAME
+        fromService:
+          name: nativity-api
+          type: web
+          envVarKey: R2_BUCKET_NAME
+      - key: R2_PUBLIC_URL
+        fromService:
+          name: nativity-api
+          type: web
+          envVarKey: R2_PUBLIC_URL
