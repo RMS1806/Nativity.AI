@@ -41,7 +41,7 @@ services:
     env: docker
     dockerfilePath: ./backend/dockerfile.worker
     dockerContext: ./backend
-    startCommand: "celery -A celery_app worker --loglevel=info --concurrency=1 -Q high,default,low"
+    dockerCommand: "celery -A celery_app worker --loglevel=info --concurrency=1 -Q high,default,low"
     envVars:
       - key: GOOGLE_API_KEY
         fromService:
