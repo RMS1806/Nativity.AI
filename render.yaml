@@ -83,3 +83,21 @@ services:
           name: nativity-api
           type: web
           envVarKey: R2_PUBLIC_URL
+
+  # ────────────────────────────────────────────────────────
+  # 3. Frontend Service (Next.js)
+  # ────────────────────────────────────────────────────────
+  - type: web
+    name: nativity-frontend
+    env: docker
+    dockerfilePath: ./frontend/dockerfile
+    dockerContext: ./frontend
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        sync: false   # set manually after nativity-api's first deploy, e.g. https://nativity-api.onrender.com
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
