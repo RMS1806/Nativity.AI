@@ -84,7 +84,27 @@ app.add_middleware(
 
 # Include routers
 app.include_router(video_router)
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Forces CORS headers to remain intact even if downstream routing, 
+    caching, or exceptions happen on Render.
+    """
+    headers = {
+        "Access-Control-Allow-Origin": "https://nativity-ai.vercel.app",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "*",
+        "Access-Control-Allow-Headers": "*",
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    }
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Internal Server Error or Proxy Glitch", "detail": str(exc)},
+        headers=headers
+    )
 
 @app.get("/")
 async def root():
