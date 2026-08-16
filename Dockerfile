@@ -11,7 +11,16 @@
 # ---------- Stage 1: build the Next.js frontend ----------
 FROM node:20-slim AS frontend-builder
 WORKDIR /frontend
-COPY frontend/package.json frontend/package-lock.json* ./
+# NOTE: package-lock.json is intentionally NOT copied here.
+# It was generated on Windows, and npm's lockfile format only
+# records the *current platform's* optional native binaries
+# (e.g. lightningcss-linux-x64-gnu, used by Tailwind v4).
+# Installing from that lock inside this Linux container skips
+# the Linux binary entirely and the build fails with:
+#   "Cannot find module '../lightningcss.linux-x64-gnu.node'"
+# Installing fresh here lets npm resolve the correct platform
+# binaries directly.
+COPY frontend/package.json ./
 RUN npm install
 COPY frontend/ .
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_dummy
