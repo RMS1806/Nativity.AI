@@ -75,7 +75,7 @@ app.add_middleware(
         "http://localhost:3000",    # Next.js dev server
         "http://127.0.0.1:3000",
         "http://localhost:8000",    # FastAPI docs
-        "*"  # Allow all for hackathon demo
+        "https://nativity-ai.vercel.app"  # Allow all for hackathon demo
     ],
     allow_credentials=True,
     allow_methods=["*"],
