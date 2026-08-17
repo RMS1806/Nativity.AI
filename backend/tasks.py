@@ -62,18 +62,11 @@ def _r2_public_url(file_key: str) -> str | None:
 # Full localization task
 # ──────────────────────────────────────────────────────────────────────────────
 
-@celery_app.task(
-    bind=True,
-    name="tasks.process_video_localization",
-    max_retries=2,
-    default_retry_delay=30,
-    acks_late=True,
-    soft_time_limit=900,   # 15 min soft
-    time_limit=1200,       # 20 min hard
-)
-def process_video_localization(self, job_id: str, user_id: str, file_key: str, target_language: str):
+def _run_localization(job_id: str, user_id: str, file_key: str, target_language: str):
     """
-    Full video localization pipeline:
+    Full video localization pipeline — runs as a plain function so it can be
+    invoked by FastAPI background_tasks OR wrapped by the Celery task below.
+
       1. Gemini analysis  (URL path: no download; Files API path: download first)
       2. TTS audio generation
       3. Download to disk for FFmpeg (if URL path was used)
@@ -82,7 +75,7 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
       6. Upload output to R2
       7. Mark job complete in PostgreSQL
     """
-    print(f"[Celery] Starting full localization: job_id={job_id}")
+    print(f"[Task] Starting full localization: job_id={job_id}")
     _cleanup_stale_temp_dirs()
 
     temp_dir = None
@@ -101,13 +94,11 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
         )
 
         if public_url:
-            # URL path — Gemini fetches the video; input_video is NOT on disk yet.
             print(f"[Task] Using R2 public URL for Gemini (saves disk during analysis)")
             analysis_result = asyncio.run(
                 gemini_service.analyze_video(video_url=public_url, target_language=target_language)
             )
             if "error" in analysis_result:
-                # URL path failed (e.g. Gemini couldn't reach R2) — fall back to download.
                 print(f"[Task] URL path failed ({analysis_result['error']}), falling back to download")
                 job_service.update_job_status(
                     job_id=job_id, status=JobStatus.UPLOADING,
@@ -120,7 +111,6 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
                     gemini_service.analyze_video(video_path=local_video_path, target_language=target_language)
                 )
         else:
-            # Classic path — download first, then upload to Gemini Files API.
             job_service.update_job_status(
                 job_id=job_id, status=JobStatus.UPLOADING,
                 progress=10, message="📥 Downloading video from storage...", user_id=user_id
@@ -173,7 +163,6 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
         )
 
         # ── Step 3: Ensure input video is on disk for FFmpeg ─────────────────
-        # If we used the URL path, the video was never downloaded — do it now.
         if not os.path.exists(local_video_path):
             job_service.update_job_status(
                 job_id=job_id, message="📥 Downloading video for FFmpeg...", user_id=user_id
@@ -213,7 +202,6 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
         )
 
         # ── Step 5: Free input + audio early — output upload is next ─────────
-        # Deleting these now frees disk before the (possibly slow) R2 upload.
         try:
             os.remove(local_video_path)
         except Exception:
@@ -293,13 +281,13 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
             file_size_mb=stitch_result.file_size_mb,
         )
 
-        print(f"[Celery] Job {job_id} completed successfully")
+        print(f"[Task] Job {job_id} completed successfully")
         return {"status": "complete", "job_id": job_id}
 
     except Exception as exc:
-        print(f"[Celery] Job {job_id} failed: {exc}")
+        print(f"[Task] Job {job_id} failed: {exc}")
         job_service.fail_job(job_id, user_id, str(exc))
-        raise self.retry(exc=exc) if self.request.retries < self.max_retries else exc
+        raise
 
     finally:
         if temp_dir and os.path.exists(temp_dir):
@@ -309,26 +297,35 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
                 print(f"[Cleanup] Warning: {e}")
 
 
+@celery_app.task(
+    bind=True,
+    name="tasks.process_video_localization",
+    max_retries=2,
+    default_retry_delay=30,
+    acks_late=True,
+    soft_time_limit=900,
+    time_limit=1200,
+)
+def process_video_localization(self, job_id: str, user_id: str, file_key: str, target_language: str):
+    """Celery wrapper — delegates to _run_localization and retries on failure."""
+    try:
+        return _run_localization(job_id, user_id, file_key, target_language)
+    except Exception as exc:
+        raise self.retry(exc=exc) if self.request.retries < self.max_retries else exc
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Draft creation task (analysis only — no TTS / FFmpeg)
 # ──────────────────────────────────────────────────────────────────────────────
 
-@celery_app.task(
-    bind=True,
-    name="tasks.process_draft_creation",
-    max_retries=2,
-    default_retry_delay=30,
-    acks_late=True,
-    soft_time_limit=600,
-    time_limit=900,
-)
-def process_draft_creation(self, job_id: str, user_id: str, file_key: str, target_language: str):
+def _run_draft_creation(job_id: str, user_id: str, file_key: str, target_language: str):
     """
     Phase 1 only: Gemini analysis → draft segments for human review.
     No TTS or FFmpeg. Uses URL path when R2_PUBLIC_URL is available so the
     video is never written to Render's disk at all for this task.
+    Callable directly by background_tasks or wrapped by the Celery task below.
     """
-    print(f"[Celery] Starting draft creation: job_id={job_id}")
+    print(f"[Task] Starting draft creation: job_id={job_id}")
     _cleanup_stale_temp_dirs()
 
     temp_dir = None
@@ -351,7 +348,6 @@ def process_draft_creation(self, job_id: str, user_id: str, file_key: str, targe
                 )
             )
             if "error" in draft_result:
-                # Fall back to download
                 print(f"[Task] Draft URL path failed, falling back to download")
                 job_service.update_job_status(
                     job_id=job_id, status=JobStatus.UPLOADING,
@@ -402,13 +398,13 @@ def process_draft_creation(self, job_id: str, user_id: str, file_key: str, targe
         }
         job_service.redis.set_job_results(job_id, results)
 
-        print(f"[Celery] Draft job {job_id} completed")
+        print(f"[Task] Draft job {job_id} completed")
         return {"status": "complete", "job_id": job_id}
 
     except Exception as exc:
-        print(f"[Celery] Draft job {job_id} failed: {exc}")
+        print(f"[Task] Draft job {job_id} failed: {exc}")
         job_service.fail_job(job_id, user_id, str(exc))
-        raise self.retry(exc=exc) if self.request.retries < self.max_retries else exc
+        raise
 
     finally:
         if temp_dir and os.path.exists(temp_dir):
@@ -416,6 +412,23 @@ def process_draft_creation(self, job_id: str, user_id: str, file_key: str, targe
                 shutil.rmtree(temp_dir)
             except Exception as e:
                 print(f"[Cleanup] Warning: {e}")
+
+
+@celery_app.task(
+    bind=True,
+    name="tasks.process_draft_creation",
+    max_retries=2,
+    default_retry_delay=30,
+    acks_late=True,
+    soft_time_limit=600,
+    time_limit=900,
+)
+def process_draft_creation(self, job_id: str, user_id: str, file_key: str, target_language: str):
+    """Celery wrapper — delegates to _run_draft_creation and retries on failure."""
+    try:
+        return _run_draft_creation(job_id, user_id, file_key, target_language)
+    except Exception as exc:
+        raise self.retry(exc=exc) if self.request.retries < self.max_retries else exc
 
 
 # ──────────────────────────────────────────────────────────────────────────────

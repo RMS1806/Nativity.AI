@@ -6,6 +6,7 @@ services:
     name: nativity-api
     env: python
     buildCommand: |
+      apt-get update -qq && apt-get install -y --no-install-recommends ffmpeg
       cd backend
       pip install -r requirements.txt
     startCommand: |
@@ -32,57 +33,17 @@ services:
         sync: false
 
   # ────────────────────────────────────────────────────────
-  # 2. Background Worker Service (Celery + FFmpeg)
+  # 2. Background Worker Service (disabled — processing now
+  #    runs as FastAPI background_tasks in nativity-api,
+  #    same as the original MVP approach. Re-enable if you
+  #    want to split processing back to a separate service.)
   # ────────────────────────────────────────────────────────
-  - type: worker
-    name: nativity-worker
-    # Render's Python environment doesn't include FFmpeg by default.
-    # We must use Docker for the worker to install FFmpeg.
-    env: docker
-    dockerfilePath: ./backend/dockerfile.worker
-    dockerContext: ./backend
-    dockerCommand: "celery -A celery_app worker --loglevel=info --concurrency=1 -Q high,default,low"
-    envVars:
-      - key: GOOGLE_API_KEY
-        fromService:
-          name: nativity-api
-          type: web
-          envVarKey: GOOGLE_API_KEY
-      - key: DATABASE_URL
-        fromService:
-          name: nativity-api
-          type: web
-          envVarKey: DATABASE_URL
-      - key: REDIS_URL
-        fromService:
-          name: nativity-api
-          type: web
-          envVarKey: REDIS_URL
-      - key: R2_ACCOUNT_ID
-        fromService:
-          name: nativity-api
-          type: web
-          envVarKey: R2_ACCOUNT_ID
-      - key: R2_ACCESS_KEY_ID
-        fromService:
-          name: nativity-api
-          type: web
-          envVarKey: R2_ACCESS_KEY_ID
-      - key: R2_SECRET_ACCESS_KEY
-        fromService:
-          name: nativity-api
-          type: web
-          envVarKey: R2_SECRET_ACCESS_KEY
-      - key: R2_BUCKET_NAME
-        fromService:
-          name: nativity-api
-          type: web
-          envVarKey: R2_BUCKET_NAME
-      - key: R2_PUBLIC_URL
-        fromService:
-          name: nativity-api
-          type: web
-          envVarKey: R2_PUBLIC_URL
+  # - type: worker
+  #   name: nativity-worker
+  #   env: docker
+  #   dockerfilePath: ./backend/dockerfile.worker
+  #   dockerContext: ./backend
+  #   dockerCommand: "celery -A celery_app worker --loglevel=info --concurrency=1 -Q high,default,low"
 
   # ────────────────────────────────────────────────────────
   # 3. Frontend Service (Next.js)

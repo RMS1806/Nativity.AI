@@ -33,6 +33,7 @@ from dependencies import get_current_user, get_optional_user
 from services.db_service import db_service
 from services.job_service import job_service
 from services.queue_service import queue_service, JobPriority
+from tasks import _run_localization, _run_draft_creation
 
 router = APIRouter(prefix="/api/video", tags=["Video Localization"])
 
@@ -63,90 +64,68 @@ async def get_upload_url(request: VideoUploadRequest):
 @router.post("/localize")
 async def start_localization(
     request: LocalizationRequest,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user)
 ):
     """
-    Start full video localization pipeline using queue system.
-
-    NEW BEHAVIOR:
-    - Job is immediately queued for background processing
-    - API responds instantly with job_id
-    - Background worker processes the job asynchronously
-    - Poll /api/video/job/{job_id} for real-time status
-
-    Returns job_id immediately. No more waiting for processing!
+    Start full video localization pipeline.
+    Responds instantly with job_id; processing runs in a background thread.
+    Poll /api/video/job/{job_id} for real-time status.
     """
     user_id = user.get("sub")
 
-    # Create job using job service
     job = job_service.create_job(
         user_id=user_id,
         input_file=request.file_key,
         target_language=request.target_language.value
     )
 
-    # Queue job for background processing (no more background_tasks!)
-    # Pass the created job_id so the worker updates the SAME record the frontend polls.
-    await queue_service.enqueue_job(
-        job_type="video_localization",
-        user_id=user_id,
-        payload={
-            "file_key": request.file_key,
-            "target_language": request.target_language.value
-        },
-        priority=JobPriority.NORMAL,
-        job_id=job.job_id
+    background_tasks.add_task(
+        _run_localization,
+        job.job_id,
+        user_id,
+        request.file_key,
+        request.target_language.value,
     )
 
     return {
         "job_id": job.job_id,
-        "status": "queued",
-        "message": "Job queued for processing. Poll /api/video/job/{job_id} for status."
+        "status": "processing",
+        "message": "Localization started. Poll /api/video/job/{job_id} for status."
     }
 
 
 @router.post("/create-draft")
 async def create_translation_draft(
     request: LocalizationRequest,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user)
 ):
     """
     Create translation draft for human review (Phase 1 of two-phase workflow).
-
-    This endpoint:
-    1. Analyzes video with Gemini
-    2. Generates translation segments
-    3. Returns segments for human review/editing
-    4. Does NOT generate TTS or final video
-
+    Analyzes video with Gemini and returns segments for editing — no TTS or FFmpeg.
     Use /api/video/finalize after reviewing/editing segments.
     """
     user_id = user.get("sub")
 
-    # Create job for draft creation
     job = job_service.create_job(
         user_id=user_id,
         input_file=request.file_key,
         target_language=request.target_language.value
     )
 
-    # Queue draft creation job (higher priority than full processing)
-    # Pass the created job_id so the worker updates the SAME record the frontend polls.
-    await queue_service.enqueue_job(
-        job_type="draft_creation",
-        user_id=user_id,
-        payload={
-            "file_key": request.file_key,
-            "target_language": request.target_language.value
-        },
-        priority=JobPriority.HIGH,  # Drafts get priority
-        job_id=job.job_id
+    background_tasks.add_task(
+        _run_draft_creation,
+        job.job_id,
+        user_id,
+        request.file_key,
+        request.target_language.value,
     )
 
     return {
         "job_id": job.job_id,
-        "status": "queued",
-        "message": "Draft creation queued. Poll /api/video/job/{job_id} for status."
+        "status": "processing",
+        "message": "Draft creation started. Poll /api/video/job/{job_id} for status."
     }
 
 
