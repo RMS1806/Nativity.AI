@@ -5,22 +5,57 @@ Two tasks:
   - process_video_localization  — full pipeline (download → Gemini → TTS → FFmpeg → R2)
   - process_draft_creation      — analysis only (download → Gemini)
 
-Both tasks are synchronous from Celery's point of view; async Gemini / TTS calls
-are run inside asyncio.run() so the worker thread can await them.
+Disk strategy (Render free tier has limited ephemeral disk):
+  - If R2_PUBLIC_URL is set: pass the public URL to Gemini directly — no local
+    download needed for the analysis step. Input video is only written to disk
+    right before FFmpeg needs it, then deleted immediately after stitching.
+  - Without R2_PUBLIC_URL: classic flow — download once, reuse for both Gemini
+    upload and FFmpeg.
+  - Stale temp directories (left by crashed jobs) are swept at the start of
+    every task so disk doesn't accumulate across jobs.
 """
 
 import asyncio
+import glob
 import tempfile
 import shutil
 import os
+import time as _time
 
 from celery_app import celery_app
+from config import settings
 from services.job_service import job_service
 from services.gemini_service import gemini_service
 from services.s3_service import s3_service
 from services.tts_service import TTSService
 from services.ffmpeg_service import ffmpeg_service
 from models import JobStatus
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _cleanup_stale_temp_dirs(max_age_seconds: int = 7200):
+    """
+    Delete /tmp/nativity_* directories older than max_age_seconds.
+    Called at the start of each task so disk freed by the finally-block of a
+    crashed job (which may not have run) is recovered before the next job starts.
+    """
+    cutoff = _time.time() - max_age_seconds
+    for stale in glob.glob("/tmp/nativity_*"):
+        try:
+            if os.path.isdir(stale) and os.path.getmtime(stale) < cutoff:
+                shutil.rmtree(stale, ignore_errors=True)
+                print(f"[Cleanup] Removed stale temp dir: {stale}")
+        except Exception as e:
+            print(f"[Cleanup] Warning sweeping {stale}: {e}")
+
+
+def _r2_public_url(file_key: str) -> str | None:
+    """Return a public R2 URL for file_key, or None if R2_PUBLIC_URL is not set."""
+    base = (settings.R2_PUBLIC_URL or "").rstrip("/")
+    return f"{base}/{file_key}" if base else None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -33,18 +68,22 @@ from models import JobStatus
     max_retries=2,
     default_retry_delay=30,
     acks_late=True,
+    soft_time_limit=900,   # 15 min soft
+    time_limit=1200,       # 20 min hard
 )
 def process_video_localization(self, job_id: str, user_id: str, file_key: str, target_language: str):
     """
     Full video localization pipeline:
-      1. Download from R2
-      2. Analyze with Gemini
-      3. Generate TTS audio
-      4. Stitch with FFmpeg
-      5. Upload output to R2
-      6. Mark job complete in PostgreSQL
+      1. Gemini analysis  (URL path: no download; Files API path: download first)
+      2. TTS audio generation
+      3. Download to disk for FFmpeg (if URL path was used)
+      4. FFmpeg stitch
+      5. Free input + audio from disk early
+      6. Upload output to R2
+      7. Mark job complete in PostgreSQL
     """
     print(f"[Celery] Starting full localization: job_id={job_id}")
+    _cleanup_stale_temp_dirs()
 
     temp_dir = None
     try:
@@ -53,28 +92,49 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
         output_video_path = os.path.join(temp_dir, "output_localized.mp4")
         whatsapp_video_path = os.path.join(temp_dir, "output_whatsapp.mp4")
 
-        # ── Step 1: Download from R2 ──────────────────────────────────────────
-        job_service.update_job_status(
-            job_id=job_id, status=JobStatus.UPLOADING,
-            progress=10, message="📥 Downloading video from storage...", user_id=user_id
-        )
+        public_url = _r2_public_url(file_key)
 
-        download_result = s3_service.download_file(file_key, local_video_path)
-        if "error" in download_result:
-            raise Exception(f"Download failed: {download_result['error']}")
-
-        # ── Step 2: Gemini analysis ───────────────────────────────────────────
+        # ── Step 1: Gemini analysis ───────────────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.ANALYZING,
-            progress=25, message="🧠 Gemini is analyzing your video...", user_id=user_id
+            progress=15, message="🧠 Gemini is analyzing your video...", user_id=user_id
         )
 
-        analysis_result = asyncio.run(
-            gemini_service.analyze_video(
-                video_path=local_video_path,
-                target_language=target_language
+        if public_url:
+            # URL path — Gemini fetches the video; input_video is NOT on disk yet.
+            print(f"[Task] Using R2 public URL for Gemini (saves disk during analysis)")
+            analysis_result = asyncio.run(
+                gemini_service.analyze_video(video_url=public_url, target_language=target_language)
             )
-        )
+            if "error" in analysis_result:
+                # URL path failed (e.g. Gemini couldn't reach R2) — fall back to download.
+                print(f"[Task] URL path failed ({analysis_result['error']}), falling back to download")
+                job_service.update_job_status(
+                    job_id=job_id, status=JobStatus.UPLOADING,
+                    progress=10, message="📥 Downloading video from storage...", user_id=user_id
+                )
+                dl = s3_service.download_file(file_key, local_video_path)
+                if "error" in dl:
+                    raise Exception(f"Download failed: {dl['error']}")
+                analysis_result = asyncio.run(
+                    gemini_service.analyze_video(video_path=local_video_path, target_language=target_language)
+                )
+        else:
+            # Classic path — download first, then upload to Gemini Files API.
+            job_service.update_job_status(
+                job_id=job_id, status=JobStatus.UPLOADING,
+                progress=10, message="📥 Downloading video from storage...", user_id=user_id
+            )
+            dl = s3_service.download_file(file_key, local_video_path)
+            if "error" in dl:
+                raise Exception(f"Download failed: {dl['error']}")
+            job_service.update_job_status(
+                job_id=job_id, status=JobStatus.ANALYZING,
+                progress=20, message="🧠 Uploading to Gemini for analysis...", user_id=user_id
+            )
+            analysis_result = asyncio.run(
+                gemini_service.analyze_video(video_path=local_video_path, target_language=target_language)
+            )
 
         if "error" in analysis_result:
             raise Exception(f"Analysis failed: {analysis_result['error']}")
@@ -87,7 +147,7 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
             message=f"✅ Analysis complete! Found {len(segments)} segments", user_id=user_id
         )
 
-        # ── Step 3: TTS audio generation ─────────────────────────────────────
+        # ── Step 2: TTS audio generation ─────────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.GENERATING_AUDIO,
             progress=50, message="🎙️ Generating localized voice audio...", user_id=user_id
@@ -111,6 +171,16 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
             job_id=job_id, progress=70,
             message=f"✅ Generated {len(audio_segments)} audio segments", user_id=user_id
         )
+
+        # ── Step 3: Ensure input video is on disk for FFmpeg ─────────────────
+        # If we used the URL path, the video was never downloaded — do it now.
+        if not os.path.exists(local_video_path):
+            job_service.update_job_status(
+                job_id=job_id, message="📥 Downloading video for FFmpeg...", user_id=user_id
+            )
+            dl = s3_service.download_file(file_key, local_video_path)
+            if "error" in dl:
+                raise Exception(f"Download for FFmpeg failed: {dl['error']}")
 
         # ── Step 4: FFmpeg stitch ─────────────────────────────────────────────
         job_service.update_job_status(
@@ -142,7 +212,18 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
             message=f"✅ Video stitched! Size: {stitch_result.file_size_mb:.1f}MB", user_id=user_id
         )
 
-        # ── Step 5: WhatsApp version (optional) ──────────────────────────────
+        # ── Step 5: Free input + audio early — output upload is next ─────────
+        # Deleting these now frees disk before the (possibly slow) R2 upload.
+        try:
+            os.remove(local_video_path)
+        except Exception:
+            pass
+        try:
+            shutil.rmtree(os.path.join(temp_dir, "audio_segments"), ignore_errors=True)
+        except Exception:
+            pass
+
+        # ── Step 6: WhatsApp version (optional) ──────────────────────────────
         whatsapp_url = None
         if stitch_result.file_size_mb > 15:
             job_service.update_job_status(
@@ -159,8 +240,12 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
                 if wa_upload.get("success"):
                     wa_dl = s3_service.generate_presigned_download_url(whatsapp_key)
                     whatsapp_url = wa_dl.get("download_url")
+                try:
+                    os.remove(whatsapp_video_path)
+                except Exception:
+                    pass
 
-        # ── Step 6: Upload output to R2 ───────────────────────────────────────
+        # ── Step 7: Upload output to R2 ───────────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, progress=90,
             message="☁️ Uploading localized video to storage...", user_id=user_id
@@ -171,7 +256,7 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
         if "error" in upload_result:
             raise Exception(f"Upload failed: {upload_result['error']}")
 
-        # ── Step 7: Generate subtitle VTT and upload ──────────────────────────
+        # ── Step 8: Generate subtitle VTT and upload ──────────────────────────
         subtitle_s3_key = None
         try:
             subtitle_s3_key = _generate_and_upload_vtt(
@@ -214,7 +299,6 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
     except Exception as exc:
         print(f"[Celery] Job {job_id} failed: {exc}")
         job_service.fail_job(job_id, user_id, str(exc))
-        # Retry with Celery's built-in retry mechanism
         raise self.retry(exc=exc) if self.request.retries < self.max_retries else exc
 
     finally:
@@ -235,45 +319,73 @@ def process_video_localization(self, job_id: str, user_id: str, file_key: str, t
     max_retries=2,
     default_retry_delay=30,
     acks_late=True,
+    soft_time_limit=600,
+    time_limit=900,
 )
 def process_draft_creation(self, job_id: str, user_id: str, file_key: str, target_language: str):
     """
-    Phase 1 only: download video, run Gemini, return draft segments for human review.
-    No TTS or FFmpeg involved.
+    Phase 1 only: Gemini analysis → draft segments for human review.
+    No TTS or FFmpeg. Uses URL path when R2_PUBLIC_URL is available so the
+    video is never written to Render's disk at all for this task.
     """
     print(f"[Celery] Starting draft creation: job_id={job_id}")
+    _cleanup_stale_temp_dirs()
 
     temp_dir = None
     try:
         temp_dir = tempfile.mkdtemp(prefix=f"nativity_draft_{job_id[:8]}_")
         local_video_path = os.path.join(temp_dir, "input_video.mp4")
+        public_url = _r2_public_url(file_key)
 
-        # Download
-        job_service.update_job_status(
-            job_id=job_id, status=JobStatus.UPLOADING,
-            progress=10, message="📥 Downloading video for analysis...", user_id=user_id
-        )
-        download_result = s3_service.download_file(file_key, local_video_path)
-        if "error" in download_result:
-            raise Exception(f"Download failed: {download_result['error']}")
-
-        # Gemini draft
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.ANALYZING,
-            progress=30, message="🧠 Gemini is analyzing and translating...", user_id=user_id
+            progress=15, message="🧠 Gemini is analyzing and translating...", user_id=user_id
         )
-        draft_result = asyncio.run(
-            gemini_service.generate_translation_draft(
-                video_path=local_video_path,
-                target_language=target_language
+
+        if public_url:
+            print(f"[Task] Draft: using R2 public URL for Gemini")
+            draft_result = asyncio.run(
+                gemini_service.generate_translation_draft(
+                    video_url=public_url,
+                    target_language=target_language
+                )
             )
-        )
+            if "error" in draft_result:
+                # Fall back to download
+                print(f"[Task] Draft URL path failed, falling back to download")
+                job_service.update_job_status(
+                    job_id=job_id, status=JobStatus.UPLOADING,
+                    progress=10, message="📥 Downloading video for analysis...", user_id=user_id
+                )
+                dl = s3_service.download_file(file_key, local_video_path)
+                if "error" in dl:
+                    raise Exception(f"Download failed: {dl['error']}")
+                draft_result = asyncio.run(
+                    gemini_service.generate_translation_draft(
+                        video_path=local_video_path,
+                        target_language=target_language
+                    )
+                )
+        else:
+            job_service.update_job_status(
+                job_id=job_id, status=JobStatus.UPLOADING,
+                progress=10, message="📥 Downloading video for analysis...", user_id=user_id
+            )
+            dl = s3_service.download_file(file_key, local_video_path)
+            if "error" in dl:
+                raise Exception(f"Download failed: {dl['error']}")
+            draft_result = asyncio.run(
+                gemini_service.generate_translation_draft(
+                    video_path=local_video_path,
+                    target_language=target_language
+                )
+            )
+
         if "error" in draft_result:
             raise Exception(f"Analysis failed: {draft_result['error']}")
 
         segments = draft_result.get("segments", [])
 
-        # Mark complete
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.COMPLETE,
             progress=100,
@@ -281,7 +393,6 @@ def process_draft_creation(self, job_id: str, user_id: str, file_key: str, targe
             user_id=user_id
         )
 
-        # Cache results in Redis
         results = {
             "draft": draft_result,
             "segments": segments,

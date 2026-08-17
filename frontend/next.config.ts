@@ -14,7 +14,15 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**.amazonaws.com',
+        hostname: '**.amazonaws.com',  // legacy AWS S3 URLs in old history rows
+      },
+      {
+        protocol: 'https',
+        hostname: '**.r2.cloudflarestorage.com',  // Cloudflare R2 direct API
+      },
+      {
+        protocol: 'https',
+        hostname: '**.r2.dev',  // Cloudflare R2 public bucket CDN
       },
     ],
   },

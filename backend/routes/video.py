@@ -36,10 +36,6 @@ from services.queue_service import queue_service, JobPriority
 
 router = APIRouter(prefix="/api/video", tags=["Video Localization"])
 
-# Remove in-memory storage - now using job_service + queue_service
-# jobs: dict[str, LocalizationJob] = {}  # REMOVED
-# job_results: dict[str, dict] = {}      # REMOVED
-
 
 @router.post("/upload-url", response_model=VideoUploadResponse)
 async def get_upload_url(request: VideoUploadRequest):
@@ -52,15 +48,15 @@ async def get_upload_url(request: VideoUploadRequest):
             status_code=503,
             detail="S3 not configured. Please set AWS credentials."
         )
-    
+
     result = s3_service.generate_presigned_upload_url(
         file_name=request.file_name,
         content_type=request.content_type
     )
-    
+
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
-    
+
     return result
 
 
@@ -71,24 +67,24 @@ async def start_localization(
 ):
     """
     Start full video localization pipeline using queue system.
-    
+
     NEW BEHAVIOR:
     - Job is immediately queued for background processing
     - API responds instantly with job_id
     - Background worker processes the job asynchronously
     - Poll /api/video/job/{job_id} for real-time status
-    
+
     Returns job_id immediately. No more waiting for processing!
     """
     user_id = user.get("sub")
-    
+
     # Create job using job service
     job = job_service.create_job(
         user_id=user_id,
         input_file=request.file_key,
         target_language=request.target_language.value
     )
-    
+
     # Queue job for background processing (no more background_tasks!)
     # Pass the created job_id so the worker updates the SAME record the frontend polls.
     await queue_service.enqueue_job(
@@ -101,7 +97,7 @@ async def start_localization(
         priority=JobPriority.NORMAL,
         job_id=job.job_id
     )
-    
+
     return {
         "job_id": job.job_id,
         "status": "queued",
@@ -116,24 +112,24 @@ async def create_translation_draft(
 ):
     """
     Create translation draft for human review (Phase 1 of two-phase workflow).
-    
+
     This endpoint:
     1. Analyzes video with Gemini
     2. Generates translation segments
     3. Returns segments for human review/editing
     4. Does NOT generate TTS or final video
-    
+
     Use /api/video/finalize after reviewing/editing segments.
     """
     user_id = user.get("sub")
-    
+
     # Create job for draft creation
     job = job_service.create_job(
         user_id=user_id,
         input_file=request.file_key,
         target_language=request.target_language.value
     )
-    
+
     # Queue draft creation job (higher priority than full processing)
     # Pass the created job_id so the worker updates the SAME record the frontend polls.
     await queue_service.enqueue_job(
@@ -146,7 +142,7 @@ async def create_translation_draft(
         priority=JobPriority.HIGH,  # Drafts get priority
         job_id=job.job_id
     )
-    
+
     return {
         "job_id": job.job_id,
         "status": "queued",
@@ -166,670 +162,22 @@ async def get_queue_status():
     }
 
 
-async def process_draft_creation(
-    job_id: str,
-    file_key: str,
-    target_language: str,
-    user_id: Optional[str] = None
-):
-    """
-    Background task for Phase 1: Create translation draft.
-    Downloads video, analyzes with Gemini, returns segments for human review.
-    Does NOT run TTS or video dubbing.
-    """
-    job = jobs.get(job_id)
-    if not job:
-        return
-    
-    temp_dir = None
-    
-    try:
-        # Create temp directory
-        temp_dir = tempfile.mkdtemp(prefix=f"nativity_draft_{job_id[:8]}_")
-        local_video_path = os.path.join(temp_dir, "input_video.mp4")
-        
-        # ═══════════════════════════════════════════
-        # STEP 1: Download from S3
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.UPLOADING
-        job.progress = 10
-        job.message = "📥 Downloading video from S3..."
-        
-        download_result = s3_service.download_file(file_key, local_video_path)
-        if "error" in download_result:
-            raise Exception(f"Download failed: {download_result['error']}")
-        
-        job.progress = 25
-        job.message = "✅ Video downloaded, starting AI analysis..."
-        
-        # ═══════════════════════════════════════════
-        # STEP 2: Generate Translation Draft with Gemini
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.ANALYZING
-        job.progress = 30
-        job.message = "🧠 Gemini is analyzing and translating your video..."
-        
-        draft_result = await gemini_service.generate_translation_draft(
-            video_path=local_video_path,
-            target_language=target_language
-        )
-        
-        if "error" in draft_result:
-            raise Exception(f"Analysis failed: {draft_result['error']}")
-        
-        segments = draft_result.get("segments", [])
-        job.progress = 90
-        job.message = f"✅ Found {len(segments)} segments. Ready for review!"
-        
-        # Store draft results
-        job_results[job_id] = {
-            "draft": draft_result,
-            "segments": segments,
-            "cultural_analysis": draft_result.get("cultural_analysis", []),
-            "video_title": draft_result.get("video_title", ""),
-            "target_language": target_language,
-            "_full_analysis": draft_result.get("_full_analysis", {})
-        }
-        
-        # ═══════════════════════════════════════════
-        # PHASE 1 COMPLETE - Ready for human review
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.COMPLETE  # Frontend will check for segments to know it's a draft
-        job.progress = 100
-        job.message = "📝 Draft ready! Review and edit translations before finalizing."
-        
-        # Save to DynamoDB with NEEDS_REVIEW status
-        if user_id:
-            db_service.save_video(
-                user_id=user_id,
-                job_id=job_id,
-                target_language=target_language,
-                input_file=file_key,
-                status="needs_review",
-                draft_segments=segments,
-                cultural_report=draft_result.get("cultural_analysis"),
-                segments_count=len(segments)
-            )
-        
-    except Exception as e:
-        job.status = JobStatus.FAILED
-        job.error = str(e)
-        job.message = f"❌ Analysis failed: {str(e)}"
-    
-    finally:
-        # Cleanup temp files
-        if temp_dir and os.path.exists(temp_dir):
-            try:
-                shutil.rmtree(temp_dir)
-            except Exception:
-                pass
-
-
 @router.post("/finalize")
 async def finalize_dubbing(
     request: dict,
-    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user)
 ):
     """
     Phase 2: Finalize dubbing with approved/edited segments.
-    
-    Input: { "job_id": "...", "approved_segments": [...] }
-    
-    This endpoint:
-    1. Takes user-edited segments
-    2. Generates TTS audio for each segment
-    3. Stitches audio with original video
-    4. Uploads to S3
-    5. Sets status to COMPLETE
+
+    The two-phase draft → finalize workflow is not yet wired to the Celery
+    worker. This endpoint is a placeholder — return 501 so callers get a
+    clear error instead of a crash.
     """
-    job_id = request.get("job_id")
-    approved_segments = request.get("approved_segments", [])
-    
-    if not job_id:
-        raise HTTPException(status_code=400, detail="job_id is required")
-    
-    if not approved_segments:
-        raise HTTPException(status_code=400, detail="approved_segments is required")
-    
-    user_id = user.get("sub")
-    
-    # Get original job data
-    original_job = jobs.get(job_id)
-    if not original_job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    # Check FFmpeg availability
-    if not ffmpeg_service.is_available():
-        raise HTTPException(
-            status_code=503,
-            detail="FFmpeg not installed. Please install FFmpeg to process videos."
-        )
-    
-    # Update job status
-    original_job.status = JobStatus.PENDING
-    original_job.progress = 0
-    original_job.message = "Starting final dubbing with your edits..."
-    
-    # Update segments in DynamoDB
-    if user_id:
-        db_service.update_job_segments(
-            user_id=user_id,
-            job_id=job_id,
-            segments=approved_segments,
-            status="processing"
-        )
-    
-    # Add background task for Phase 2
-    background_tasks.add_task(
-        process_finalize_dubbing,
-        job_id,
-        original_job.input_file,
-        original_job.target_language,
-        approved_segments,
-        user_id
+    raise HTTPException(
+        status_code=501,
+        detail="Two-phase finalize workflow is not yet implemented in the current worker setup. Use /localize for single-pass localization."
     )
-    
-    return {
-        "job_id": job_id,
-        "status": "finalizing",
-        "message": "Dubbing started with your approved segments. Poll /api/video/job/{job_id} for status."
-    }
-
-
-async def process_finalize_dubbing(
-    job_id: str,
-    file_key: str,
-    target_language: str,
-    approved_segments: list,
-    user_id: Optional[str] = None
-):
-    """
-    Background task for Phase 2: Generate TTS and stitch video.
-    Uses the user-approved/edited segments.
-    """
-    job = jobs.get(job_id)
-    if not job:
-        return
-    
-    temp_dir = None
-    tts_temp_service = None
-    
-    try:
-        # Create temp directory
-        temp_dir = tempfile.mkdtemp(prefix=f"nativity_final_{job_id[:8]}_")
-        local_video_path = os.path.join(temp_dir, "input_video.mp4")
-        output_video_path = os.path.join(temp_dir, "output_localized.mp4")
-        whatsapp_video_path = os.path.join(temp_dir, "output_whatsapp.mp4")
-        
-        # ═══════════════════════════════════════════
-        # STEP 1: Download from S3
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.UPLOADING
-        job.progress = 5
-        job.message = "📥 Downloading video from S3..."
-        
-        download_result = s3_service.download_file(file_key, local_video_path)
-        if "error" in download_result:
-            raise Exception(f"Download failed: {download_result['error']}")
-        
-        job.progress = 15
-        job.message = "✅ Video downloaded, generating audio..."
-        
-        # ═══════════════════════════════════════════
-        # STEP 2: Generate TTS Audio from Approved Segments
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.GENERATING_AUDIO
-        job.progress = 20
-        job.message = "🎙️ Generating localized voice audio from your edits..."
-        
-        # Create TTS service with temp directory
-        tts_temp_service = TTSService(output_dir=os.path.join(temp_dir, "audio_segments"))
-        
-        # Convert approved segments to the format TTS service expects
-        tts_segments = []
-        for seg in approved_segments:
-            tts_segments.append({
-                "start_time": seg.get("start", 0),
-                "end_time": seg.get("end", 0),
-                "translated_text": seg.get("translated_text", ""),
-                "original_text": seg.get("original_text", "")
-            })
-        
-        # Generate audio for each segment
-        audio_segments = await tts_temp_service.generate_segments_from_analysis(
-            segments=tts_segments,
-            language=target_language,
-            gender="female"  # Default to female voice
-        )
-        
-        job.progress = 50
-        job.message = f"✅ Generated {len(audio_segments)} audio segments"
-        
-        # ═══════════════════════════════════════════
-        # STEP 3: Stitch Video with FFmpeg
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.STITCHING
-        job.progress = 55
-        job.message = "🎬 Stitching new audio with video..."
-        
-        # Convert audio segments to dict format for FFmpeg
-        audio_segment_dicts = [
-            {
-                "file_path": seg.file_path,
-                "start_time": seg.start_time,
-                "end_time": seg.end_time
-            }
-            for seg in audio_segments
-        ]
-        
-        # Calculate TTS delay from first approved segment start time
-        tts_delay = 0.0
-        if approved_segments:
-            # Safely get start time of first segment
-            first_seg = approved_segments[0]
-            tts_delay = first_seg.get("start", 0.0)
-            
-        # Stitch video
-        stitch_result = ffmpeg_service.stitch_video(
-            original_video_path=local_video_path,
-            audio_segments=audio_segment_dicts,
-            output_path=output_video_path,
-            optimize_for_mobile=True,
-            tts_delay_seconds=tts_delay
-        )
-        
-        if not stitch_result.success:
-            raise Exception(f"Video stitching failed: {stitch_result.error}")
-        
-        job.progress = 80
-        job.message = f"✅ Video stitched! Size: {stitch_result.file_size_mb:.1f}MB"
-        
-        # Create WhatsApp version if needed
-        whatsapp_result = None
-        if stitch_result.file_size_mb > 15:
-            job.message = "📱 Creating WhatsApp-optimized version..."
-            whatsapp_result = ffmpeg_service.create_whatsapp_version(
-                input_path=output_video_path,
-                output_path=whatsapp_video_path,
-                target_size_mb=14.5
-            )
-        
-        # ═══════════════════════════════════════════
-        # STEP 4: Upload to S3
-        # ═══════════════════════════════════════════
-        job.progress = 90
-        job.message = "☁️ Uploading localized video to S3..."
-        
-        output_key = f"outputs/{job_id}/localized_{target_language}.mp4"
-        
-        upload_result = s3_service.upload_file(output_video_path, output_key)
-        if "error" in upload_result:
-            raise Exception(f"Upload failed: {upload_result['error']}")
-        
-        # Upload WhatsApp version if created
-        whatsapp_url = None
-        if whatsapp_result and whatsapp_result.success:
-            whatsapp_key = f"outputs/{job_id}/whatsapp_{target_language}.mp4"
-            whatsapp_upload = s3_service.upload_file(whatsapp_video_path, whatsapp_key)
-            if whatsapp_upload.get("success"):
-                whatsapp_download = s3_service.generate_presigned_download_url(whatsapp_key)
-                whatsapp_url = whatsapp_download.get("download_url")
-        
-        # Get download URL
-        download_result = s3_service.generate_presigned_download_url(output_key)
-        
-        # ═══════════════════════════════════════════
-        # COMPLETE!
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.COMPLETE
-        job.progress = 100
-        job.output_file = output_key
-        job.message = "🎉 Localization complete! Your video is ready."
-        
-        # Update job results
-        if job_id in job_results:
-            job_results[job_id].update({
-                "output_url": download_result.get("download_url"),
-                "whatsapp_url": whatsapp_url,
-                "file_size_mb": stitch_result.file_size_mb
-            })
-        
-        # ═══════════════════════════════════════════
-        # STEP 4.5: Generate & Upload WebVTT Subtitles
-        # ═══════════════════════════════════════════
-        subtitle_s3_key = None
-        try:
-            def format_vtt_time(seconds):
-                h = int(seconds // 3600)
-                m = int((seconds % 3600) // 60)
-                s = seconds % 60
-                return f"{h:02d}:{m:02d}:{s:06.3f}"
-
-            def parse_timestamp(val):
-                """Convert MM:SS or HH:MM:SS strings OR numeric values to float seconds."""
-                if isinstance(val, (int, float)):
-                    return float(val)
-                parts = str(val).strip().split(":")
-                parts = [float(p) for p in parts]
-                if len(parts) == 2:   # MM:SS
-                    return parts[0] * 60 + parts[1]
-                if len(parts) == 3:   # HH:MM:SS
-                    return parts[0] * 3600 + parts[1] * 60 + parts[2]
-                return 0.0
-
-            vtt_lines = ["WEBVTT", ""]
-            for idx, seg in enumerate(approved_segments):
-                start_sec = parse_timestamp(seg.get("start", 0))
-                end_sec   = parse_timestamp(seg.get("end",   0))
-                text      = seg.get("translated_text", "").strip()
-                if not text:
-                    continue
-                vtt_lines.append(str(idx + 1))
-                vtt_lines.append(f"{format_vtt_time(start_sec)} --> {format_vtt_time(end_sec)}")
-                vtt_lines.append(text)
-                vtt_lines.append("")
-
-            vtt_content  = "\n".join(vtt_lines)
-            vtt_tmp_path = os.path.join(temp_dir, f"{job_id}.vtt")
-            with open(vtt_tmp_path, "w", encoding="utf-8") as f:
-                f.write(vtt_content)
-
-            subtitle_s3_key = f"subtitles/{job_id}.vtt"
-            s3_service.upload_file(vtt_tmp_path, subtitle_s3_key)
-        except Exception as vtt_err:
-            print(f"[VTT] Non-fatal: could not generate subtitles: {vtt_err}")
-
-        # Update DynamoDB with completion
-        if user_id:
-            db_service.update_job_status(
-                user_id=user_id,
-                job_id=job_id,
-                status="complete",
-                output_url=download_result.get("download_url"),
-                output_s3_key=output_key,  # store raw key so /history can regenerate fresh URLs
-                subtitle_s3_key=subtitle_s3_key,
-                approved_segments=approved_segments  # persist translated text for metadata generation
-            )
-        
-    except Exception as e:
-        job.status = JobStatus.FAILED
-        job.error = str(e)
-        job.message = f"❌ Processing failed: {str(e)}"
-        
-        if user_id:
-            db_service.update_job_status(
-                user_id=user_id,
-                job_id=job_id,
-                status="failed"
-            )
-    
-    finally:
-        # Cleanup temp files
-        if temp_dir and os.path.exists(temp_dir):
-            try:
-                shutil.rmtree(temp_dir)
-            except Exception:
-                pass
-
-
-# Keep original full pipeline for backwards compatibility (legacy)
-async def process_localization_job(
-    job_id: str,
-    file_key: str,
-    target_language: str,
-    user_id: Optional[str] = None
-):
-    """
-    Background task to process video localization
-    
-    Full pipeline:
-    1. Download from S3
-    2. Analyze with Gemini
-    3. Generate TTS audio
-    4. Stitch with FFmpeg
-    5. Upload to S3
-    """
-    job = jobs.get(job_id)
-    if not job:
-        return
-    
-    temp_dir = None
-    tts_temp_service = None
-    
-    try:
-        # Create temp directory for all processing
-        temp_dir = tempfile.mkdtemp(prefix=f"nativity_{job_id[:8]}_")
-        local_video_path = os.path.join(temp_dir, "input_video.mp4")
-        output_video_path = os.path.join(temp_dir, "output_localized.mp4")
-        whatsapp_video_path = os.path.join(temp_dir, "output_whatsapp.mp4")
-        
-        # ═══════════════════════════════════════════
-        # STEP 1: Download from S3
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.UPLOADING
-        job.progress = 5
-        job.message = "📥 Downloading video from S3..."
-        
-        download_result = s3_service.download_file(file_key, local_video_path)
-        if "error" in download_result:
-            raise Exception(f"Download failed: {download_result['error']}")
-        
-        job.progress = 15
-        job.message = "✅ Video downloaded successfully"
-        
-        # ═══════════════════════════════════════════
-        # STEP 2: Analyze with Gemini
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.ANALYZING
-        job.progress = 20
-        job.message = "🧠 Gemini is watching and understanding your video..."
-        
-        analysis_result = await gemini_service.analyze_video(
-            video_path=local_video_path,
-            target_language=target_language
-        )
-        
-        if "error" in analysis_result:
-            raise Exception(f"Analysis failed: {analysis_result['error']}")
-        
-        segments = analysis_result.get('segments', [])
-        cultural_report = analysis_result.get('cultural_report', {})
-        
-        job.progress = 40
-        job.message = f"✅ Analysis complete! Found {len(segments)} segments. Idioms adapted: {cultural_report.get('idioms_adapted', 0)}"
-        
-        # Store analysis for later retrieval
-        job_results[job_id] = {
-            "analysis": analysis_result,
-            "segments_count": len(segments)
-        }
-        
-        # ═══════════════════════════════════════════
-        # STEP 3: Generate TTS Audio
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.GENERATING_AUDIO
-        job.progress = 45
-        job.message = "🎙️ Generating localized voice audio..."
-        
-        # Create TTS service with temp directory
-        tts_temp_service = TTSService(output_dir=os.path.join(temp_dir, "audio_segments"))
-        
-        # Determine voice gender from TTS instructions
-        tts_instructions = analysis_result.get('tts_instructions', {})
-        voice_gender = tts_instructions.get('recommended_voice_gender', 'female')
-        if voice_gender == 'mixed':
-            voice_gender = 'female'  # Default to female for mixed
-        
-        # Generate audio for each segment
-        audio_segments = await tts_temp_service.generate_segments_from_analysis(
-            segments=segments,
-            language=target_language,
-            gender=voice_gender
-        )
-        
-        job.progress = 65
-        job.message = f"✅ Generated {len(audio_segments)} audio segments"
-        
-        # ═══════════════════════════════════════════
-        # STEP 4: Stitch Video with FFmpeg
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.STITCHING
-        job.progress = 70
-        job.message = "🎬 Stitching new audio with video..."
-        
-        # Convert audio segments to dict format for FFmpeg
-        audio_segment_dicts = [
-            {
-                "file_path": seg.file_path,
-                "start_time": seg.start_time,
-                "end_time": seg.end_time
-            }
-            for seg in audio_segments
-        ]
-        
-        # Get first speech offset from Gemini analysis
-        video_metadata = analysis_result.get("video_metadata", {})
-        tts_delay = video_metadata.get("first_speech_offset_seconds", 0.0)
-        
-        # Stitch video with optimized settings
-        stitch_result = ffmpeg_service.stitch_video(
-            original_video_path=local_video_path,
-            audio_segments=audio_segment_dicts,
-            output_path=output_video_path,
-            optimize_for_mobile=True,
-            tts_delay_seconds=tts_delay
-        )
-        
-        if not stitch_result.success:
-            raise Exception(f"Video stitching failed: {stitch_result.error}")
-        
-        job.progress = 85
-        job.message = f"✅ Video stitched! Size: {stitch_result.file_size_mb:.1f}MB"
-        
-        # ═══════════════════════════════════════════
-        # STEP 4.5: Create WhatsApp Version (Optional)
-        # ═══════════════════════════════════════════
-        whatsapp_result = None
-        if stitch_result.file_size_mb > 15:
-            job.message = "📱 Creating WhatsApp-optimized version (<15MB)..."
-            whatsapp_result = ffmpeg_service.create_whatsapp_version(
-                input_path=output_video_path,
-                output_path=whatsapp_video_path,
-                target_size_mb=14.5
-            )
-        
-        # ═══════════════════════════════════════════
-        # STEP 5: Upload to S3
-        # ═══════════════════════════════════════════
-        job.progress = 90
-        job.message = "☁️ Uploading localized video to S3..."
-        
-        # Generate output S3 keys
-        output_key = f"outputs/{job_id}/localized_{target_language}.mp4"
-        
-        upload_result = s3_service.upload_file(output_video_path, output_key)
-        if "error" in upload_result:
-            raise Exception(f"Upload failed: {upload_result['error']}")
-        
-        # Upload WhatsApp version if created
-        whatsapp_url = None
-        if whatsapp_result and whatsapp_result.success:
-            whatsapp_key = f"outputs/{job_id}/whatsapp_{target_language}.mp4"
-            whatsapp_upload = s3_service.upload_file(whatsapp_video_path, whatsapp_key)
-            if whatsapp_upload.get("success"):
-                whatsapp_download = s3_service.generate_presigned_download_url(whatsapp_key)
-                whatsapp_url = whatsapp_download.get("download_url")
-        
-        # Get download URL
-        download_result = s3_service.generate_presigned_download_url(output_key)
-        
-        # ═══════════════════════════════════════════
-        # COMPLETE!
-        # ═══════════════════════════════════════════
-        job.status = JobStatus.COMPLETE
-        job.progress = 100
-        job.output_file = output_key
-        job.message = "🎉 Localization complete! Your video is ready."
-        
-        # Store final results
-        job_results[job_id].update({
-            "output_url": download_result.get("download_url"),
-            "whatsapp_url": whatsapp_url,
-            "file_size_mb": stitch_result.file_size_mb,
-            "cultural_report": cultural_report
-        })
-        
-        # ═══════════════════════════════════════════
-        # STEP 5.5: Generate & Upload WebVTT Subtitles
-        # ═══════════════════════════════════════════
-        subtitle_s3_key = None
-        try:
-            def format_vtt_time(seconds):
-                h = int(seconds // 3600)
-                m = int((seconds % 3600) // 60)
-                s = seconds % 60
-                return f"{h:02d}:{m:02d}:{s:06.3f}"
-
-            vtt_lines = ["WEBVTT", ""]
-            for idx, seg in enumerate(segments):
-                start_sec = seg.get("start_time", 0)
-                end_sec   = seg.get("end_time",   0)
-                text      = seg.get("translated_text", "").strip()
-                if not text:
-                    continue
-                vtt_lines.append(str(idx + 1))
-                vtt_lines.append(f"{format_vtt_time(float(start_sec))} --> {format_vtt_time(float(end_sec))}")
-                vtt_lines.append(text)
-                vtt_lines.append("")
-
-            vtt_content  = "\n".join(vtt_lines)
-            vtt_tmp_path = os.path.join(temp_dir, f"{job_id}.vtt")
-            with open(vtt_tmp_path, "w", encoding="utf-8") as f:
-                f.write(vtt_content)
-
-            subtitle_s3_key = f"subtitles/{job_id}.vtt"
-            s3_service.upload_file(vtt_tmp_path, subtitle_s3_key)
-        except Exception as vtt_err:
-            print(f"[VTT] Non-fatal: could not generate subtitles: {vtt_err}")
-
-        # Calculate words localized from all segments
-        words_localized = sum(
-            len(seg.get("translated_text", "").split())
-            for seg in segments
-        )
-
-        # Save to DynamoDB for persistent history
-        if user_id:
-            db_service.save_video(
-                user_id=user_id,
-                job_id=job_id,
-                target_language=target_language,
-                input_file=file_key,
-                status="complete",
-                output_url=download_result.get("download_url"),
-                output_s3_key=output_key,  # store raw key so /history can regenerate fresh URLs
-                whatsapp_url=whatsapp_url,
-                file_size_mb=stitch_result.file_size_mb,
-                cultural_report=cultural_report,
-                segments_count=len(segments),
-                draft_segments=segments,  # persist translated text for metadata generation
-                subtitle_s3_key=subtitle_s3_key,
-                words_localized=words_localized
-            )
-        
-    except Exception as e:
-        job.status = JobStatus.FAILED
-        job.error = str(e)
-        job.message = f"❌ Processing failed: {str(e)}"
-    
-    finally:
-        # Cleanup temp files
-        if temp_dir and os.path.exists(temp_dir):
-            try:
-                shutil.rmtree(temp_dir)
-            except Exception:
-                pass  # Best effort cleanup
 
 
 @router.get("/job/{job_id}")
@@ -841,15 +189,15 @@ async def get_job_status(job_id: str):
     job = job_service.get_job_status(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    
+
     response = job.dict()
-    
+
     # Include results if job is complete
     if job.status == JobStatus.COMPLETE:
         results = job_service.get_job_results(job_id)
         if results:
             response["results"] = results
-    
+
     return response
 
 
@@ -858,7 +206,7 @@ async def get_job_analysis(job_id: str):
     """
     Get the detailed Gemini analysis for a completed job.
 
-    Reads from DynamoDB (the durable store). Returns the translated segments
+    Reads from the database (the durable store). Returns the translated segments
     (for SRT download) and the cultural_analysis / cultural_report
     (for the Cultural Insights modal).
     """
@@ -875,7 +223,7 @@ async def get_job_analysis(job_id: str):
         if isinstance(val, str):
             try:
                 return _json.loads(val)
-            except (json.JSONDecodeError, TypeError):
+            except (_json.JSONDecodeError, TypeError):
                 return default
         return val
 
@@ -906,7 +254,7 @@ async def generate_video_metadata(
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid user token")
 
-    # ── Step 1: Resolve target_language and translated_text from DynamoDB ─────
+    # ── Step 1: Resolve target_language and translated_text from DB ───────────
     import json as _json
     translated_text = None
     target_language = "hindi"
@@ -935,7 +283,7 @@ async def generate_video_metadata(
     if not gemini_service.is_configured():
         raise HTTPException(status_code=503, detail="Gemini API not configured")
 
-    # ── Step 4: Generate transcript-grounded metadata ────────────────────────
+    # ── Step 3: Generate transcript-grounded metadata ─────────────────────────
     print(f"[METADATA] Calling Gemini generate_metadata with lang={target_language}")
     metadata = await gemini_service.generate_metadata(
         translated_text=translated_text,
@@ -952,7 +300,6 @@ async def generate_video_metadata(
     return metadata
 
 
-
 @router.post("/upload-direct")
 async def upload_video_direct(
     file: UploadFile = File(...),
@@ -967,34 +314,34 @@ async def upload_video_direct(
             status_code=503,
             detail="Gemini API not configured. Set GOOGLE_API_KEY."
         )
-    
+
     # Validate file type
     if not file.content_type or not file.content_type.startswith("video/"):
         raise HTTPException(
             status_code=400,
             detail="Invalid file type. Please upload a video file."
         )
-    
+
     # Save to temp file
     temp_dir = tempfile.mkdtemp()
     temp_path = os.path.join(temp_dir, file.filename or "video.mp4")
-    
+
     try:
         with open(temp_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
-        
+
         # Analyze with Gemini
         result = await gemini_service.analyze_video(
             video_path=temp_path,
             target_language=target_language.value
         )
-        
+
         if "error" in result:
             raise HTTPException(status_code=500, detail=result["error"])
-        
+
         return result
-    
+
     finally:
         # Cleanup
         if os.path.exists(temp_path):
@@ -1014,15 +361,15 @@ async def quick_translate(request: QuickTranslateRequest):
             status_code=503,
             detail="Gemini API not configured. Set GOOGLE_API_KEY."
         )
-    
+
     result = await gemini_service.quick_translate(
         text=request.text,
         target_language=request.target_language.value
     )
-    
+
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
-    
+
     return result
 
 
@@ -1038,20 +385,20 @@ async def test_tts(
     """
     temp_dir = tempfile.mkdtemp()
     output_path = os.path.join(temp_dir, "test_audio.mp3")
-    
+
     result = await tts_service.generate_audio_segment(
         text=text,
         language=language,
         file_path=output_path,
         gender=gender
     )
-    
+
     # Cleanup
     if os.path.exists(output_path):
         os.remove(output_path)
     if os.path.exists(temp_dir):
         os.rmdir(temp_dir)
-    
+
     return result
 
 
@@ -1087,7 +434,7 @@ async def get_user_history(
     """
     Get the authenticated user's video localization history
     Requires authentication via Clerk JWT
-    
+
     Returns list of past localizations with fresh download URLs and dashboard stats
     """
     user_id = user.get("sub")
@@ -1096,15 +443,15 @@ async def get_user_history(
             status_code=401,
             detail="Invalid user token"
         )
-    
+
     result = db_service.get_user_history(user_id, limit=limit)
-    
+
     if "error" in result:
         raise HTTPException(
             status_code=503,
             detail=f"Database error: {result['error']}"
         )
-    
+
     # Regenerate fresh presigned URLs for each video
     videos = result.get("videos", [])
     for video in videos:
@@ -1154,7 +501,6 @@ async def get_user_history(
         "words_localized": words_localized,
     }
 
-    
     return result
 
 
@@ -1166,10 +512,10 @@ async def delete_video(
     """
     Delete a video from user's history.
     Requires authentication - users can only delete their own videos.
-    
+
     Args:
         job_id: The job ID to delete
-        
+
     Returns:
         Success confirmation or error
     """
@@ -1179,10 +525,9 @@ async def delete_video(
             status_code=401,
             detail="Invalid user token"
         )
-    
-    # Delete from DynamoDB
+
     result = db_service.delete_video(user_id, job_id)
-    
+
     if "error" in result:
         if "not found" in result["error"].lower():
             raise HTTPException(
@@ -1193,14 +538,7 @@ async def delete_video(
             status_code=500,
             detail=f"Failed to delete video: {result['error']}"
         )
-    
-    # Optionally: Delete S3 files (commented out for now - can enable if needed)
-    # try:
-    #     output_key = f"outputs/{job_id}/"
-    #     s3_service.delete_folder(output_key)
-    # except Exception as e:
-    #     print(f"Warning: Failed to delete S3 files for {job_id}: {e}")
-    
+
     return {
         "success": True,
         "message": f"Video {job_id} deleted successfully"

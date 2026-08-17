@@ -52,62 +52,74 @@ class GeminiService:
         return self.client is not None
     
     async def analyze_video(
-        self, 
-        video_path: str, 
+        self,
+        video_path: str = None,
+        video_url: str = None,
         target_language: str = "hindi"
     ) -> dict:
         """
-        Analyze video and generate localization data
-        
-        Args:
-            video_path: Path to the video file
-            target_language: Target language for translation (hindi, tamil, bengali)
-        
-        Returns:
-            dict containing transcript, translations, timestamps, and cultural notes
+        Analyze video and generate localization data.
+
+        Accepts either a local file path (video_path) or a publicly accessible
+        URL (video_url). When video_url is supplied Gemini fetches the file
+        itself — no download to local disk, no Files API upload, no wait loop.
+        This is the preferred path when R2_PUBLIC_URL is configured because it
+        avoids writing the input video to Render's ephemeral disk at all.
+
+        Falls back to the Files API upload path when only video_path is given.
         """
         if not self.is_configured():
             return {"error": "Gemini API not configured. Set GOOGLE_API_KEY."}
-        
-        try:
-            # Upload video file to Gemini using new SDK
-            print(f"📤 Uploading video file: {video_path}")
-            video_file = self.client.files.upload(file=video_path)
-            print(f"📁 File uploaded: {video_file.name}")
-            
-            # Wait for file processing
-            print("⏳ Waiting for video processing...")
-            while video_file.state.name == "PROCESSING":
-                time.sleep(2)
-                video_file = self.client.files.get(name=video_file.name)
-                print(f"   State: {video_file.state.name}")
-            
-            if video_file.state.name == "FAILED":
-                return {"error": "Video processing failed"}
-            
-            print("✅ Video ready for analysis")
-            
-        except Exception as e:
-            return {"error": f"Failed to upload video: {str(e)}"}
-        
-        # The magic prompt for cultural transcreation
+
+        if not video_path and not video_url:
+            return {"error": "Either video_path or video_url must be provided"}
+
+        # ── Build the video content part ──────────────────────────────────────
+        if video_url:
+            # URL path: Gemini fetches the video directly — zero local disk use.
+            print(f"🔗 Using video URL for Gemini (no download needed): {video_url[:80]}...")
+            try:
+                video_content = types.Part.from_uri(file_uri=video_url, mime_type="video/mp4")
+            except Exception as e:
+                return {"error": f"Failed to create URI part: {str(e)}"}
+        else:
+            # Files API path: upload local file, wait for Gemini to process it.
+            try:
+                print(f"📤 Uploading video file to Gemini Files API: {video_path}")
+                video_file = self.client.files.upload(file=video_path)
+                print(f"📁 File uploaded: {video_file.name}")
+
+                print("⏳ Waiting for Gemini video processing...")
+                while video_file.state.name == "PROCESSING":
+                    time.sleep(2)
+                    video_file = self.client.files.get(name=video_file.name)
+                    print(f"   State: {video_file.state.name}")
+
+                if video_file.state.name == "FAILED":
+                    return {"error": "Video processing failed in Gemini Files API"}
+
+                print("✅ Video ready for analysis")
+                video_content = video_file
+            except Exception as e:
+                return {"error": f"Failed to upload video: {str(e)}"}
+
+        # ── Generate analysis ─────────────────────────────────────────────────
         prompt = self._build_analysis_prompt(target_language)
-        
-        # Generate analysis with video context (retry loop with backoff)
-        print(f"Sending payload of length: {len(prompt)} (+ video file)")
+        print(f"Sending payload of length: {len(prompt)} (+ video)")
+
         response = None
         for attempt in range(MAX_RETRIES):
             try:
                 print(f"🧠 Generating analysis (attempt {attempt + 1}/{MAX_RETRIES})...")
                 response = self.client.models.generate_content(
                     model=MODEL_NAME,
-                    contents=[video_file, prompt],
+                    contents=[video_content, prompt],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json"
                     )
                 )
                 print("✅ Analysis complete")
-                break  # Success, exit retry loop
+                break
             except TimeoutError as e:
                 print(f"⏱️ Timeout on attempt {attempt + 1}: {e}")
                 if attempt == MAX_RETRIES - 1:
@@ -130,12 +142,11 @@ class GeminiService:
                     else:
                         return {"status": "failed", "reason": "LLM service temporarily unavailable. Please try again later."}
                 else:
-                    raise e  # Re-raise unexpected errors immediately
-        
+                    raise e
+
         if response is None:
             return {"error": "Failed to get response from Gemini API"}
-        
-        # Parse and return structured response
+
         try:
             result = json.loads(response.text)
             result["source_language"] = "english"
@@ -148,27 +159,20 @@ class GeminiService:
             }
     
     async def generate_translation_draft(
-        self, 
-        video_path: str, 
+        self,
+        video_path: str = None,
+        video_url: str = None,
         target_language: str = "hindi"
     ) -> dict:
         """
         Phase 1: Generate translation draft for human review.
-        Performs transcription and translation but does NOT run TTS or dubbing.
-        
-        Args:
-            video_path: Path to the video file
-            target_language: Target language for translation
-        
-        Returns:
-            dict containing:
-                - segments: List of {start, end, original_text, translated_text}
-                - cultural_analysis: List of cultural adaptations made
-                - video_title: Detected/suggested title
-                - ready_for_review: True if segments are ready
+        Accepts either video_path (local file) or video_url (public URL).
         """
-        # Use the existing analyze_video method
-        analysis = await self.analyze_video(video_path, target_language)
+        analysis = await self.analyze_video(
+            video_path=video_path,
+            video_url=video_url,
+            target_language=target_language,
+        )
         
         if "error" in analysis:
             return analysis
