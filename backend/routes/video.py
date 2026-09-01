@@ -175,7 +175,7 @@ async def get_job_status(job_id: str):
     # Stale job detection: background thread may have crashed without updating Redis.
     # If a non-terminal job has had no progress update for _STALE_JOB_MINUTES, mark
     # it failed so the user doesn't wait forever for something already dead.
-    if job.status in (JobStatus.PROCESSING, JobStatus.PENDING):
+    if job.status not in (JobStatus.COMPLETE, JobStatus.FAILED):
         raw = redis_service.get_job_status(job_id)
         updated_at_str = (raw or {}).get("updated_at", "")
         if updated_at_str:
