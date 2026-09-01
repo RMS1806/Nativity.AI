@@ -326,6 +326,27 @@ class FFmpegService:
                 duration_seconds=0, error=str(e)
             )
 
+    def _build_duck_filter(self, segments: list, background_volume: float,
+                           in_label: str = "0:a", out_label: str = "bg") -> str:
+        """
+        Build a time-varying volume filter that ducks the original audio only
+        during speech segments. Full volume in gaps → natural game/music sound;
+        ducked to background_volume during TTS speech → dub is clear.
+        A 0.1s pre-buffer and 0.25s post-buffer smooth the transitions.
+        """
+        if not segments:
+            return f"[{in_label}]volume=1.0[{out_label}]"
+
+        duck_parts = []
+        for seg in segments:
+            s = max(0.0, self._parse_timestamp(seg.get('start_time', 0)) - 0.1)
+            e = self._parse_timestamp(seg.get('end_time', 0)) + 0.25
+            duck_parts.append(f"between(t,{s:.3f},{e:.3f})")
+
+        duck_expr = "+".join(duck_parts)
+        vol_expr = f"if(gt({duck_expr},0),{background_volume},1.0)"
+        return f"[{in_label}]volume='{vol_expr}':eval=frame[{out_label}]"
+
     def _stitch_single_pass(
         self, original_video_path, valid_segments, output_path,
         video_duration, has_original_audio, optimize_for_mobile,
@@ -362,7 +383,7 @@ class FFmpegService:
 
         mix_inputs = list(seg_labels)
         if has_original_audio:
-            filter_parts.append(f"[0:a]volume={background_volume}[bg]")
+            filter_parts.append(self._build_duck_filter(valid_segments, background_volume))
             mix_inputs.append("[bg]")
 
         if len(mix_inputs) > 1:
@@ -529,8 +550,11 @@ class FFmpegService:
             cmd = ["ffmpeg", "-y", "-i", original_video_path, "-i", tts_full]
 
             if has_original_audio:
+                duck_filter = self._build_duck_filter(
+                    valid_segments, background_volume, in_label="0:a", out_label="bg"
+                )
                 fc = (
-                    f"[0:a]volume={background_volume}[bg];"
+                    f"{duck_filter};"
                     f"[bg][1:a]amix=inputs=2:duration=first:normalize=0[aout]"
                 )
                 cmd += ["-filter_complex", fc, "-map", "0:v", "-map", "[aout]"]
