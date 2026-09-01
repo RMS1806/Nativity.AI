@@ -17,6 +17,7 @@ from dataclasses import dataclass
 # Chunked FFmpeg constants — keeps peak RAM low on Render free tier
 _BATCH_THRESHOLD = 20   # above this many segments, use chunked mode
 _CHUNK_WINDOW_S  = 90.0 # seconds per rendering window in chunked mode
+_MIX_BATCH_SIZE  = 20   # max TTS inputs per audio-dub FFmpeg pass
 
 
 @dataclass
@@ -603,6 +604,101 @@ class FFmpegService:
         print(f"✅ Audio extracted: {os.path.getsize(output_path) / 1e6:.1f}MB → {output_path}")
         return True
 
+    def _mix_tts_positioned_batch(
+        self, segments: list, output_path: str, tts_volume: float
+    ) -> bool:
+        """
+        Mix one batch of TTS segments (with adelay positioning) into a single .aac.
+        No original audio, no duck filter — just position and overlap TTS clips.
+        Returns True on success. Keeps filter_complex small (≤20 inputs).
+        """
+        MAX_TEMPO = 2.0
+        inputs = []
+        filter_parts = []
+        labels = []
+
+        for idx, seg in enumerate(segments):
+            file_path = seg['file_path']
+            start_s = self._parse_timestamp(seg.get('start_time', 0))
+            end_s = self._parse_timestamp(seg.get('end_time', 0))
+            slot_s = max(end_s - start_s, 0.0)
+            gen_s = self._get_audio_duration_seconds(file_path)
+
+            tempo = 1.0
+            if slot_s > 0 and gen_s > slot_s:
+                tempo = min(gen_s / slot_s, MAX_TEMPO)
+
+            delay_ms = max(int(round(start_s * 1000)), 0)
+            label = f"t{idx}"
+            inputs += ["-i", file_path]
+            filter_parts.append(
+                f"[{idx}:a]volume={tts_volume},atempo={tempo:.4f},"
+                f"adelay={delay_ms}|{delay_ms}[{label}]"
+            )
+            labels.append(f"[{label}]")
+
+        filter_parts.append(
+            f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest[out]"
+        )
+
+        cmd = ["ffmpeg", "-y"] + inputs + [
+            "-filter_complex", ";".join(filter_parts),
+            "-map", "[out]",
+            "-c:a", "aac", "-b:a", "128k",
+            output_path,
+        ]
+
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            print(f"[TTS batch] Failed: {r.stderr[-400:]}")
+            return False
+        return True
+
+    def _final_duck_mix(
+        self,
+        original_audio_path: str,
+        all_segments: list,
+        batch_files: list,
+        output_path: str,
+        background_volume: float,
+    ) -> ProcessingResult:
+        """
+        Final mix: duck original audio during speech windows, then amix with
+        all pre-built TTS batch tracks. Total inputs = len(batch_files) + 1,
+        so filter_complex stays tiny regardless of segment count.
+        """
+        inputs = ["-i", original_audio_path]
+        for bf in batch_files:
+            inputs += ["-i", bf]
+
+        # [0:a] → duck → [bg]
+        duck = self._build_duck_filter(all_segments, background_volume, in_label="0:a", out_label="bg")
+        batch_labels = [f"[{i + 1}:a]" for i in range(len(batch_files))]
+        mix_str = (
+            f"{''.join(batch_labels + ['[bg]'])}amix=inputs={len(batch_files) + 1}:"
+            f"duration=longest:normalize=0[aout]"
+        )
+        filter_complex = f"{duck};{mix_str}"
+
+        cmd = ["ffmpeg", "-y"] + inputs + [
+            "-filter_complex", filter_complex,
+            "-map", "[aout]",
+            "-c:a", "aac", "-b:a", "128k",
+            output_path,
+        ]
+
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        if r.returncode != 0:
+            return ProcessingResult(success=False, output_path=None,
+                                    file_size_mb=0, duration_seconds=0,
+                                    error=f"Final duck mix failed: {r.stderr[-2000:]}")
+
+        size_mb = os.path.getsize(output_path) / (1024 * 1024)
+        duration = self._get_audio_duration_seconds(output_path)
+        print(f"✅ Audio dub ready: {size_mb:.1f}MB, {duration:.1f}s")
+        return ProcessingResult(success=True, output_path=output_path,
+                                file_size_mb=size_mb, duration_seconds=duration)
+
     def mix_audio_dub(
         self,
         original_audio_path: str,
@@ -612,8 +708,13 @@ class FFmpegService:
         tts_volume: float = 1.0,
     ) -> ProcessingResult:
         """
-        Audio-only dub mix — same ducking logic as stitch_video but outputs
-        a .aac file with no video stream. Much faster than full video encode.
+        Audio-only dub mix. Outputs a .aac with no video stream.
+
+        For ≤ _MIX_BATCH_SIZE segments: single FFmpeg pass (simple, fast).
+        For > _MIX_BATCH_SIZE segments: two-stage approach to keep each
+        filter_complex small enough to parse within Render's 512MB RAM:
+          1. Batch TTS segments in groups of _MIX_BATCH_SIZE → positioned .aac files
+          2. Final pass: duck original + amix all batch files (few inputs, tiny filter)
         """
         if not self.ffmpeg_available:
             return ProcessingResult(success=False, output_path=None,
@@ -629,60 +730,96 @@ class FFmpegService:
                                     file_size_mb=0, duration_seconds=0,
                                     error="No audio segments provided")
 
-        MAX_TEMPO = 2.0
-        inputs = ["-i", original_audio_path]
-        filter_parts = []
-        seg_labels = []
-
-        for idx, seg in enumerate(valid_segments):
-            file_path = seg['file_path']
-            start_s = self._parse_timestamp(seg.get('start_time', 0))
-            end_s = self._parse_timestamp(seg.get('end_time', 0))
-            slot_s = max(end_s - start_s, 0.0)
-            gen_s = self._get_audio_duration_seconds(file_path)
-
-            tempo = 1.0
-            if slot_s > 0 and gen_s > slot_s:
-                tempo = min(gen_s / slot_s, MAX_TEMPO)
-
-            input_index = idx + 1
-            inputs += ["-i", file_path]
-            delay_ms = max(int(round(start_s * 1000)), 0)
-            label = f"s{input_index}"
-            filter_parts.append(
-                f"[{input_index}:a]volume={tts_volume},atempo={tempo:.4f},"
-                f"adelay={delay_ms}|{delay_ms}[{label}]"
-            )
-            seg_labels.append(f"[{label}]")
-
-        # Duck original audio during speech segments
-        filter_parts.append(self._build_duck_filter(valid_segments, background_volume))
-        mix_inputs = seg_labels + ["[bg]"]
-
-        filter_parts.append(
-            f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:"
-            f"duration=longest:normalize=0[aout]"
-        )
-
-        cmd = ["ffmpeg", "-y"] + inputs + [
-            "-filter_complex", ";".join(filter_parts),
-            "-map", "[aout]",
-            "-c:a", "aac", "-b:a", "128k",
-            output_path,
-        ]
-
         print(f"🎙️ Mixing audio dub ({len(valid_segments)} segments)...")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-        if result.returncode != 0:
+
+        if len(valid_segments) <= _MIX_BATCH_SIZE:
+            # ── Single-pass (short video / few segments) ──────────────────────
+            MAX_TEMPO = 2.0
+            inputs = ["-i", original_audio_path]
+            filter_parts = []
+            seg_labels = []
+
+            for idx, seg in enumerate(valid_segments):
+                file_path = seg['file_path']
+                start_s = self._parse_timestamp(seg.get('start_time', 0))
+                end_s = self._parse_timestamp(seg.get('end_time', 0))
+                slot_s = max(end_s - start_s, 0.0)
+                gen_s = self._get_audio_duration_seconds(file_path)
+
+                tempo = 1.0
+                if slot_s > 0 and gen_s > slot_s:
+                    tempo = min(gen_s / slot_s, MAX_TEMPO)
+
+                input_index = idx + 1
+                inputs += ["-i", file_path]
+                delay_ms = max(int(round(start_s * 1000)), 0)
+                label = f"s{input_index}"
+                filter_parts.append(
+                    f"[{input_index}:a]volume={tts_volume},atempo={tempo:.4f},"
+                    f"adelay={delay_ms}|{delay_ms}[{label}]"
+                )
+                seg_labels.append(f"[{label}]")
+
+            filter_parts.append(self._build_duck_filter(valid_segments, background_volume))
+            mix_inputs = seg_labels + ["[bg]"]
+            filter_parts.append(
+                f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:"
+                f"duration=longest:normalize=0[aout]"
+            )
+
+            cmd = ["ffmpeg", "-y"] + inputs + [
+                "-filter_complex", ";".join(filter_parts),
+                "-map", "[aout]",
+                "-c:a", "aac", "-b:a", "128k",
+                output_path,
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            if result.returncode != 0:
+                return ProcessingResult(success=False, output_path=None,
+                                        file_size_mb=0, duration_seconds=0,
+                                        error=f"FFmpeg audio mix failed: {result.stderr[-2000:]}")
+
+            size_mb = os.path.getsize(output_path) / (1024 * 1024)
+            duration = self._get_audio_duration_seconds(output_path)
+            print(f"✅ Audio dub ready: {size_mb:.1f}MB, {duration:.1f}s")
+            return ProcessingResult(success=True, output_path=output_path,
+                                    file_size_mb=size_mb, duration_seconds=duration)
+
+        # ── Multi-pass (long video / many segments) ───────────────────────────
+        # Stage 1: batch TTS into positioned .aac files (≤ _MIX_BATCH_SIZE inputs each)
+        work_dir = os.path.dirname(output_path)
+        batch_files = []
+        base = os.path.basename(output_path)
+
+        for batch_idx, start in enumerate(range(0, len(valid_segments), _MIX_BATCH_SIZE)):
+            batch = valid_segments[start:start + _MIX_BATCH_SIZE]
+            batch_path = os.path.join(work_dir, f"_tts_batch_{batch_idx}_{base}")
+            print(f"  [batch {batch_idx + 1}] {len(batch)} segments → {os.path.basename(batch_path)}")
+            if self._mix_tts_positioned_batch(batch, batch_path, tts_volume):
+                batch_files.append(batch_path)
+            else:
+                print(f"  [batch {batch_idx + 1}] failed — skipping")
+
+        if not batch_files:
             return ProcessingResult(success=False, output_path=None,
                                     file_size_mb=0, duration_seconds=0,
-                                    error=f"FFmpeg audio mix failed: {result.stderr[-2000:]}")
+                                    error="All TTS batches failed")
 
-        size_mb = os.path.getsize(output_path) / (1024 * 1024)
-        duration = self._get_audio_duration_seconds(output_path)
-        print(f"✅ Audio dub ready: {size_mb:.1f}MB, {duration:.1f}s")
-        return ProcessingResult(success=True, output_path=output_path,
-                                file_size_mb=size_mb, duration_seconds=duration)
+        # Stage 2: duck original + merge all batch tracks (few inputs, tiny filter)
+        print(f"  [final] merging {len(batch_files)} batch(es) + ducked original")
+        result = self._final_duck_mix(
+            original_audio_path, valid_segments, batch_files, output_path, background_volume
+        )
+
+        # Clean up batch intermediates
+        for bf in batch_files:
+            try:
+                os.remove(bf)
+            except Exception:
+                pass
+
+        return result
 
     def create_whatsapp_version(
         self,
