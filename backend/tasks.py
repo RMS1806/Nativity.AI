@@ -93,38 +93,18 @@ def _run_localization(job_id: str, user_id: str, file_key: str, target_language:
             progress=15, message="🧠 Gemini is analyzing your video...", user_id=user_id
         )
 
-        if public_url:
-            print(f"[Task] Using R2 public URL for Gemini (saves disk during analysis)")
-            analysis_result = asyncio.run(
-                gemini_service.analyze_video(video_url=public_url, target_language=target_language)
+        if not public_url:
+            raise Exception(
+                "R2_PUBLIC_URL is not configured. Set this environment variable on Render "
+                "to allow Gemini to fetch the video directly from R2."
             )
-            if "error" in analysis_result:
-                print(f"[Task] URL path failed ({analysis_result['error']}), falling back to download")
-                job_service.update_job_status(
-                    job_id=job_id, status=JobStatus.UPLOADING,
-                    progress=10, message="📥 Downloading video from storage...", user_id=user_id
-                )
-                dl = s3_service.download_file(file_key, local_video_path)
-                if "error" in dl:
-                    raise Exception(f"Download failed: {dl['error']}")
-                analysis_result = asyncio.run(
-                    gemini_service.analyze_video(video_path=local_video_path, target_language=target_language)
-                )
-        else:
-            job_service.update_job_status(
-                job_id=job_id, status=JobStatus.UPLOADING,
-                progress=10, message="📥 Downloading video from storage...", user_id=user_id
-            )
-            dl = s3_service.download_file(file_key, local_video_path)
-            if "error" in dl:
-                raise Exception(f"Download failed: {dl['error']}")
-            job_service.update_job_status(
-                job_id=job_id, status=JobStatus.ANALYZING,
-                progress=20, message="🧠 Uploading to Gemini for analysis...", user_id=user_id
-            )
-            analysis_result = asyncio.run(
-                gemini_service.analyze_video(video_path=local_video_path, target_language=target_language)
-            )
+
+        print(f"[Task] Using R2 public URL for Gemini: {public_url}")
+        analysis_result = asyncio.run(
+            gemini_service.analyze_video(video_url=public_url, target_language=target_language)
+        )
+        if "error" in analysis_result:
+            raise Exception(f"Gemini analysis failed: {analysis_result['error']}")
 
         if "error" in analysis_result:
             raise Exception(f"Analysis failed: {analysis_result['error']}")
@@ -339,43 +319,21 @@ def _run_draft_creation(job_id: str, user_id: str, file_key: str, target_languag
             progress=15, message="🧠 Gemini is analyzing and translating...", user_id=user_id
         )
 
-        if public_url:
-            print(f"[Task] Draft: using R2 public URL for Gemini")
-            draft_result = asyncio.run(
-                gemini_service.generate_translation_draft(
-                    video_url=public_url,
-                    target_language=target_language
-                )
+        if not public_url:
+            raise Exception(
+                "R2_PUBLIC_URL is not configured. Set this environment variable on Render "
+                "to allow Gemini to fetch the video directly from R2."
             )
-            if "error" in draft_result:
-                print(f"[Task] Draft URL path failed, falling back to download")
-                job_service.update_job_status(
-                    job_id=job_id, status=JobStatus.UPLOADING,
-                    progress=10, message="📥 Downloading video for analysis...", user_id=user_id
-                )
-                dl = s3_service.download_file(file_key, local_video_path)
-                if "error" in dl:
-                    raise Exception(f"Download failed: {dl['error']}")
-                draft_result = asyncio.run(
-                    gemini_service.generate_translation_draft(
-                        video_path=local_video_path,
-                        target_language=target_language
-                    )
-                )
-        else:
-            job_service.update_job_status(
-                job_id=job_id, status=JobStatus.UPLOADING,
-                progress=10, message="📥 Downloading video for analysis...", user_id=user_id
+
+        print(f"[Task] Draft: using R2 public URL for Gemini: {public_url}")
+        draft_result = asyncio.run(
+            gemini_service.generate_translation_draft(
+                video_url=public_url,
+                target_language=target_language
             )
-            dl = s3_service.download_file(file_key, local_video_path)
-            if "error" in dl:
-                raise Exception(f"Download failed: {dl['error']}")
-            draft_result = asyncio.run(
-                gemini_service.generate_translation_draft(
-                    video_path=local_video_path,
-                    target_language=target_language
-                )
-            )
+        )
+        if "error" in draft_result:
+            raise Exception(f"Gemini analysis failed: {draft_result['error']}")
 
         if "error" in draft_result:
             raise Exception(f"Analysis failed: {draft_result['error']}")
