@@ -522,8 +522,13 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
             print(f"[VTT] Non-fatal: {vtt_err}")
 
         download_result = s3_service.generate_presigned_download_url(output_key)
+        output_url = download_result.get("download_url")
 
         results = {
+            "output_url": output_url,
+            "whatsapp_url": whatsapp_url,
+            "dub_audio_url": dub_audio_url,
+            "dub_audio_s3_key": dub_audio_s3_key,
             "analysis": analysis_result,
             "segments": segments,
             "cultural_report": cultural_report,
@@ -532,14 +537,12 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
             "file_size_mb": stitch_result.file_size_mb,
             "words_localized": sum(len(seg.get("translated_text", "").split()) for seg in segments),
             "subtitle_s3_key": subtitle_s3_key,
-            "dub_audio_url": dub_audio_url,
-            "dub_audio_s3_key": dub_audio_s3_key,
         }
 
         job_service.complete_job(
             job_id=job_id,
             user_id=user_id,
-            output_url=download_result.get("download_url"),
+            output_url=output_url,
             output_s3_key=output_key,
             results=results,
             whatsapp_url=whatsapp_url,
