@@ -20,6 +20,7 @@ import glob
 import tempfile
 import shutil
 import os
+import threading
 import time as _time
 
 from celery_app import celery_app
@@ -58,6 +59,11 @@ def _r2_public_url(file_key: str) -> str | None:
     return f"{base}/{file_key}" if base else None
 
 
+# One pipeline at a time — prevents concurrent FFmpeg processes from OOM-killing
+# the Render free-tier process (512 MB RAM).
+_pipeline_semaphore = threading.Semaphore(1)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Full localization task
 # ──────────────────────────────────────────────────────────────────────────────
@@ -78,6 +84,13 @@ def _run_localization(job_id: str, user_id: str, file_key: str, target_language:
     print(f"[Task] Starting full localization: job_id={job_id}")
     _cleanup_stale_temp_dirs()
 
+    print(f"[Task] Waiting for pipeline slot: job_id={job_id}")
+    with _pipeline_semaphore:
+        print(f"[Task] Pipeline slot acquired: job_id={job_id}")
+        _run_localization_inner(job_id, user_id, file_key, target_language)
+
+
+def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_language: str):
     temp_dir = None
     try:
         temp_dir = tempfile.mkdtemp(prefix=f"nativity_{job_id[:8]}_")
