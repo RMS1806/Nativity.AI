@@ -55,7 +55,8 @@ class GeminiService:
         self,
         video_path: str = None,
         video_url: str = None,
-        target_language: str = "hindi"
+        target_language: str = "hindi",
+        continuation_context: str = None,
     ) -> dict:
         """
         Analyze video and generate localization data.
@@ -104,7 +105,7 @@ class GeminiService:
                 return {"error": f"Failed to upload video: {str(e)}"}
 
         # ── Generate analysis ─────────────────────────────────────────────────
-        prompt = self._build_analysis_prompt(target_language)
+        prompt = self._build_analysis_prompt(target_language, continuation_context)
         print(f"Sending payload of length: {len(prompt)} (+ video)")
 
         response = None
@@ -205,7 +206,7 @@ class GeminiService:
             "_full_analysis": analysis
         }
     
-    def _build_analysis_prompt(self, target_language: str) -> str:
+    def _build_analysis_prompt(self, target_language: str, continuation_context: str = None) -> str:
         """Build the comprehensive analysis prompt"""
         
         language_map = {
@@ -218,7 +219,16 @@ class GeminiService:
         
         target_lang_display = language_map.get(target_language, target_language)
         
+        continuation_note = ""
+        if continuation_context:
+            continuation_note = (
+                f"\nIMPORTANT — CHUNK CONTEXT: This video is a continuation segment. "
+                f"The previous chunk ended with the speaker saying: \"{continuation_context}\". "
+                f"Ensure translation style, terminology, and speaker identity stay consistent with that context.\n"
+            )
+
         return f'''You are Nativity.ai, an expert localization agent specializing in adapting English content for Indian audiences.
+{continuation_note}
 
 Analyze this video comprehensively and provide a JSON response with the following structure:
 

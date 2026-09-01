@@ -17,6 +17,8 @@ Disk strategy (Render free tier has limited ephemeral disk):
 
 import asyncio
 import glob
+import json as _json
+import subprocess as _subprocess
 import tempfile
 import shutil
 import os
@@ -57,6 +59,200 @@ def _r2_public_url(file_key: str) -> str | None:
     """Return a public R2 URL for file_key, or None if R2_PUBLIC_URL is not set."""
     base = (settings.R2_PUBLIC_URL or "").rstrip("/")
     return f"{base}/{file_key}" if base else None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# VAD-based chunking helpers (Fix 2)
+# ──────────────────────────────────────────────────────────────────────────────
+
+GEMINI_CHUNK_THRESHOLD_S = 240.0  # videos longer than this get chunked (4 min)
+GEMINI_CHUNK_TARGET_S    = 240.0  # aim for ~4-min chunks
+
+
+def _get_video_duration_url(video_url: str) -> float:
+    """ffprobe a public URL to get duration. Only reads container headers — no full download."""
+    try:
+        r = _subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", video_url],
+            capture_output=True, text=True, timeout=30
+        )
+        if r.returncode == 0:
+            return float(_json.loads(r.stdout).get("format", {}).get("duration", 0))
+    except Exception as e:
+        print(f"[VAD] ffprobe duration check failed: {e}")
+    return 0.0
+
+
+def _find_silence_cut_points(audio_path: str, target_s: float = 240.0, min_silence_s: float = 0.5) -> list:
+    """
+    Run ffmpeg silencedetect on a local audio file.
+    Returns list of (t_start, t_end) tuples for each chunk.
+    Cut points are placed at silence gaps nearest to each target_s multiple.
+    Falls back to hard cuts if no silence is found near a boundary.
+    """
+    r = _subprocess.run(
+        ["ffmpeg", "-i", audio_path,
+         "-af", f"silencedetect=noise=-30dB:d={min_silence_s}",
+         "-f", "null", "-"],
+        capture_output=True, text=True
+    )
+
+    silence_ends = []
+    for line in r.stderr.splitlines():
+        if "silence_end" in line:
+            try:
+                ts = float(line.split("silence_end:")[1].strip().split()[0])
+                silence_ends.append(ts)
+            except (IndexError, ValueError):
+                pass
+
+    # Get audio duration via ffprobe
+    try:
+        rp = _subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", audio_path],
+            capture_output=True, text=True, timeout=15
+        )
+        duration = float(_json.loads(rp.stdout).get("format", {}).get("duration", 0))
+    except Exception:
+        duration = 0.0
+
+    if not duration or duration <= target_s:
+        return [(0.0, duration or None)]
+
+    # Build cut points near each target_s multiple
+    cut_points = [0.0]
+    t = target_s
+    window = target_s * 0.3  # accept silence within ±30% of target
+
+    while t < duration - target_s * 0.25:
+        candidates = [s for s in silence_ends if abs(s - t) <= window]
+        if candidates:
+            cut_points.append(min(candidates, key=lambda s: abs(s - t)))
+        else:
+            cut_points.append(t)
+        t += target_s
+
+    cut_points.append(duration)
+    return [(cut_points[i], cut_points[i + 1]) for i in range(len(cut_points) - 1)]
+
+
+def _add_time_offset(timestamp: str, offset_s: float) -> str:
+    """Add offset_s seconds to a 'MM:SS' or 'HH:MM:SS' timestamp string."""
+    try:
+        parts = [float(p) for p in str(timestamp).strip().split(":")]
+        if len(parts) == 2:
+            total = parts[0] * 60 + parts[1] + offset_s
+        elif len(parts) == 3:
+            total = parts[0] * 3600 + parts[1] * 60 + parts[2] + offset_s
+        else:
+            total = float(parts[0]) + offset_s
+        m, s = divmod(total, 60)
+        return f"{int(m):02d}:{s:05.2f}"
+    except Exception:
+        return timestamp
+
+
+async def _analyze_video_in_chunks(video_url: str, target_language: str, temp_dir: str) -> dict:
+    """
+    VAD-based chunked Gemini analysis for videos longer than GEMINI_CHUNK_THRESHOLD_S.
+
+    1. Download audio-only track for silencedetect (small, fast).
+    2. Find cut points at silence gaps near every GEMINI_CHUNK_TARGET_S seconds.
+    3. For each chunk: extract to disk → upload to Gemini Files API → analyze → delete.
+    4. Re-index all segment timestamps to absolute positions → merge.
+
+    Chunks use Gemini Files API (not R2) so no temp R2 storage is needed.
+    """
+    print(f"[VAD] Starting chunked Gemini analysis ({GEMINI_CHUNK_TARGET_S:.0f}s chunks)...")
+
+    # Step 1: Download audio only for VAD (much smaller than full video)
+    audio_path = os.path.join(temp_dir, "vad_audio.m4a")
+    r = _subprocess.run(
+        ["ffmpeg", "-y", "-i", video_url,
+         "-vn", "-acodec", "aac", "-ar", "16000", "-ac", "1", audio_path],
+        capture_output=True, text=True, timeout=120
+    )
+    if r.returncode != 0 or not os.path.exists(audio_path):
+        print(f"[VAD] Audio download failed — falling back to single Gemini call")
+        return await gemini_service.analyze_video(video_url=video_url, target_language=target_language)
+
+    # Step 2: Find silence cut points
+    chunks = _find_silence_cut_points(audio_path, target_s=GEMINI_CHUNK_TARGET_S)
+    print(f"[VAD] {len(chunks)} chunk(s): {[(round(s, 1), round(e, 1)) for s, e in chunks]}")
+
+    try:
+        os.remove(audio_path)
+    except Exception:
+        pass
+
+    if len(chunks) <= 1:
+        print("[VAD] Single chunk — using direct Gemini call")
+        return await gemini_service.analyze_video(video_url=video_url, target_language=target_language)
+
+    # Step 3: Process each chunk
+    all_segments = []
+    all_cultural_analysis = []
+    merged_result = None
+    tail_context = ""
+
+    for i, (t_start, t_end) in enumerate(chunks):
+        chunk_dur = t_end - t_start
+        chunk_path = os.path.join(temp_dir, f"vad_chunk_{i:04d}.mp4")
+
+        print(f"[VAD] Chunk {i+1}/{len(chunks)}: [{t_start:.1f}s – {t_end:.1f}s] ({chunk_dur:.1f}s)")
+
+        # Extract chunk via stream copy (no re-encode)
+        r = _subprocess.run(
+            ["ffmpeg", "-y",
+             "-ss", str(t_start), "-t", str(chunk_dur),
+             "-i", video_url, "-c", "copy", chunk_path],
+            capture_output=True, text=True, timeout=120
+        )
+        if r.returncode != 0 or not os.path.exists(chunk_path):
+            print(f"[VAD] Chunk {i+1} extract failed — skipping")
+            continue
+
+        # Analyze via Gemini Files API (handles upload/cleanup on Gemini's side)
+        chunk_result = await gemini_service.analyze_video(
+            video_path=chunk_path,
+            target_language=target_language,
+            continuation_context=tail_context if i > 0 else None,
+        )
+
+        # Delete local chunk immediately to free disk
+        try:
+            os.remove(chunk_path)
+        except Exception:
+            pass
+
+        if "error" in chunk_result:
+            print(f"[VAD] Chunk {i+1} analysis failed: {chunk_result['error']}")
+            continue
+
+        # Re-index timestamps to absolute positions in the full video
+        for seg in chunk_result.get("segments", []):
+            seg["start_time"] = _add_time_offset(seg.get("start_time", "00:00"), t_start)
+            seg["end_time"]   = _add_time_offset(seg.get("end_time",   "00:00"), t_start)
+            all_segments.append(seg)
+
+        for ca in chunk_result.get("cultural_analysis", []):
+            if "timestamp" in ca:
+                ca["timestamp"] = _add_time_offset(ca["timestamp"], t_start)
+            all_cultural_analysis.append(ca)
+
+        # Capture tail context (last 2 segments' original text) for next chunk
+        last_segs = chunk_result.get("segments", [])[-2:]
+        tail_context = " ".join(s.get("original_text", "") for s in last_segs)
+
+        if merged_result is None:
+            merged_result = chunk_result
+
+    if merged_result is None:
+        return {"error": "All chunks failed to analyze"}
+
+    merged_result["segments"] = all_segments
+    merged_result["cultural_analysis"] = all_cultural_analysis
+    return merged_result
 
 
 # One pipeline at a time — prevents concurrent FFmpeg processes from OOM-killing
@@ -113,9 +309,18 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
             )
 
         print(f"[Task] Using R2 public URL for Gemini: {public_url}")
-        analysis_result = asyncio.run(
-            gemini_service.analyze_video(video_url=public_url, target_language=target_language)
-        )
+        video_duration = _get_video_duration_url(public_url)
+        print(f"[Task] Video duration: {video_duration:.1f}s (threshold: {GEMINI_CHUNK_THRESHOLD_S}s)")
+
+        if video_duration > GEMINI_CHUNK_THRESHOLD_S:
+            print(f"[Task] Long video — using VAD-chunked Gemini analysis")
+            analysis_result = asyncio.run(
+                _analyze_video_in_chunks(public_url, target_language, temp_dir)
+            )
+        else:
+            analysis_result = asyncio.run(
+                gemini_service.analyze_video(video_url=public_url, target_language=target_language)
+            )
         if "error" in analysis_result:
             raise Exception(f"Gemini analysis failed: {analysis_result['error']}")
 
