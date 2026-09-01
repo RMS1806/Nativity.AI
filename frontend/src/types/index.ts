@@ -60,6 +60,7 @@ export interface LocalizationJob {
     results?: {
         output_url?: string;
         whatsapp_url?: string;
+        dub_audio_url?: string;
         file_size_mb?: number;
         cultural_report?: CulturalReport;
         analysis?: {

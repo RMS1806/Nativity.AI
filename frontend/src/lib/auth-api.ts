@@ -90,6 +90,7 @@ export interface HistoryVideo {
     status: string;
     created_at: string;
     output_url?: string;
+    dub_audio_url?: string;
     input_url?: string;
     subtitle_url?: string;
     whatsapp_url?: string;
