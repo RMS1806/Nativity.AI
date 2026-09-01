@@ -678,6 +678,188 @@ def process_draft_creation(self, job_id: str, user_id: str, file_key: str, targe
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Audio-only localization task
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _run_audio_localization(job_id: str, user_id: str, file_key: str, target_language: str):
+    """
+    Audio-only dub pipeline — no video encode, no 8-10 min limit.
+
+      1. Extract audio from R2 URL via FFmpeg (tiny .aac, fast)
+      2. Upload to Gemini Files API → analyze for translation + TTS segments
+      3. Generate TTS audio for each segment
+      4. Mix original audio (ducked) + TTS segments → output .aac
+      5. Upload .aac to R2 → mark job complete
+
+    Produces a dubbed audio track ready for YouTube Studio upload.
+    """
+    print(f"[AudioTask] Starting audio localization: job_id={job_id}")
+    _cleanup_stale_temp_dirs()
+
+    print(f"[AudioTask] Waiting for pipeline slot: job_id={job_id}")
+    with _pipeline_semaphore:
+        print(f"[AudioTask] Pipeline slot acquired: job_id={job_id}")
+        _run_audio_localization_inner(job_id, user_id, file_key, target_language)
+
+
+def _run_audio_localization_inner(job_id: str, user_id: str, file_key: str, target_language: str):
+    temp_dir = None
+    try:
+        temp_dir = tempfile.mkdtemp(prefix=f"nativity_audio_{job_id[:8]}_")
+        audio_path = os.path.join(temp_dir, "original_audio.aac")
+        output_path = os.path.join(temp_dir, "dubbed_audio.aac")
+
+        public_url = _r2_public_url(file_key)
+        if not public_url:
+            raise Exception(
+                "R2_PUBLIC_URL is not configured. Cannot fetch audio from R2."
+            )
+
+        # ── Step 1: Extract audio from video URL ─────────────────────────────
+        job_service.update_job_status(
+            job_id=job_id, status=JobStatus.ANALYZING,
+            progress=10, message="🎵 Extracting audio track...", user_id=user_id
+        )
+
+        ok = ffmpeg_service.extract_audio(public_url, audio_path)
+        if not ok or not os.path.exists(audio_path):
+            raise Exception("FFmpeg audio extraction failed")
+
+        audio_mb = os.path.getsize(audio_path) / 1e6
+        print(f"[AudioTask] Extracted {audio_mb:.1f}MB audio → {audio_path}")
+
+        # ── Step 2: Gemini audio analysis ────────────────────────────────────
+        job_service.update_job_status(
+            job_id=job_id, progress=25,
+            message="🧠 Gemini is analyzing the audio...", user_id=user_id
+        )
+
+        analysis_result = asyncio.run(
+            gemini_service.analyze_audio(audio_path=audio_path, target_language=target_language)
+        )
+        if "error" in analysis_result:
+            raise Exception(f"Gemini audio analysis failed: {analysis_result['error']}")
+
+        segments = analysis_result.get("segments", [])
+        cultural_report = analysis_result.get("cultural_report", {})
+        print(f"[AudioTask] Analysis complete: {len(segments)} segments")
+
+        job_service.update_job_status(
+            job_id=job_id, progress=45,
+            message=f"✅ Analysis done! {len(segments)} segments found", user_id=user_id
+        )
+
+        # ── Step 3: TTS audio generation ─────────────────────────────────────
+        job_service.update_job_status(
+            job_id=job_id, status=JobStatus.GENERATING_AUDIO,
+            progress=50, message="🎙️ Generating dubbed voice audio...", user_id=user_id
+        )
+
+        tts_temp = TTSService(output_dir=os.path.join(temp_dir, "audio_segments"))
+        tts_instructions = analysis_result.get("tts_instructions", {})
+        voice_gender = tts_instructions.get("recommended_voice_gender", "female")
+        if voice_gender == "mixed":
+            voice_gender = "female"
+
+        audio_segments = asyncio.run(
+            tts_temp.generate_segments_from_analysis(
+                segments=segments,
+                language=target_language,
+                gender=voice_gender,
+            )
+        )
+        print(f"[AudioTask] TTS done: {len(audio_segments)} segments")
+
+        job_service.update_job_status(
+            job_id=job_id, progress=70,
+            message=f"✅ Generated {len(audio_segments)} audio segments", user_id=user_id
+        )
+
+        # ── Step 4: Audio-only mix ────────────────────────────────────────────
+        job_service.update_job_status(
+            job_id=job_id, status=JobStatus.STITCHING,
+            progress=75, message="🎛️ Mixing dubbed audio track...", user_id=user_id
+        )
+
+        audio_segment_dicts = [
+            {"file_path": seg.file_path, "start_time": seg.start_time, "end_time": seg.end_time}
+            for seg in audio_segments
+        ]
+
+        mix_result = ffmpeg_service.mix_audio_dub(
+            original_audio_path=audio_path,
+            audio_segments=audio_segment_dicts,
+            output_path=output_path,
+            background_volume=0.15,
+        )
+        if not mix_result.success:
+            raise Exception(f"Audio mix failed: {mix_result.error}")
+
+        job_service.update_job_status(
+            job_id=job_id, progress=88,
+            message=f"✅ Mix complete! Size: {mix_result.file_size_mb:.1f}MB", user_id=user_id
+        )
+
+        # Free TTS segments early
+        try:
+            shutil.rmtree(os.path.join(temp_dir, "audio_segments"), ignore_errors=True)
+        except Exception:
+            pass
+
+        # ── Step 5: Upload dubbed audio to R2 ────────────────────────────────
+        job_service.update_job_status(
+            job_id=job_id, progress=93,
+            message="☁️ Uploading dubbed audio...", user_id=user_id
+        )
+
+        output_key = f"outputs/{job_id}/dubbed_audio_{target_language}.aac"
+        upload_result = s3_service.upload_file(output_path, output_key)
+        if "error" in upload_result:
+            raise Exception(f"Upload failed: {upload_result['error']}")
+
+        download_result = s3_service.generate_presigned_download_url(output_key)
+        output_url = download_result.get("download_url")
+
+        results = {
+            "output_url": output_url,
+            "dub_audio_url": output_url,
+            "analysis": analysis_result,
+            "segments": segments,
+            "cultural_report": cultural_report,
+            "segments_count": len(segments),
+            "file_size_mb": mix_result.file_size_mb,
+            "words_localized": sum(
+                len(seg.get("translated_text", "").split()) for seg in segments
+            ),
+            "is_audio_only": True,
+        }
+
+        job_service.complete_job(
+            job_id=job_id,
+            user_id=user_id,
+            output_url=output_url,
+            output_s3_key=output_key,
+            results=results,
+            file_size_mb=mix_result.file_size_mb,
+        )
+
+        print(f"[AudioTask] Job {job_id} complete")
+        return {"status": "complete", "job_id": job_id}
+
+    except Exception as exc:
+        print(f"[AudioTask] Job {job_id} failed: {exc}")
+        job_service.fail_job(job_id, user_id, str(exc))
+        raise
+
+    finally:
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as e:
+                print(f"[Cleanup] Warning: {e}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Shared helpers
 # ──────────────────────────────────────────────────────────────────────────────
 

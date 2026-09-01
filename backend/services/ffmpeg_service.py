@@ -585,6 +585,105 @@ class FFmpegService:
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
     
+    def extract_audio(self, source: str, output_path: str) -> bool:
+        """
+        Extract audio-only from a video file or URL. Stream-copies the audio
+        track (no re-encode), downmixed to mono 16kHz AAC for small file size.
+        Returns True on success.
+        """
+        cmd = [
+            "ffmpeg", "-y", "-i", source,
+            "-vn", "-acodec", "aac", "-ar", "16000", "-ac", "1",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            print(f"extract_audio failed: {result.stderr[-500:]}")
+            return False
+        print(f"✅ Audio extracted: {os.path.getsize(output_path) / 1e6:.1f}MB → {output_path}")
+        return True
+
+    def mix_audio_dub(
+        self,
+        original_audio_path: str,
+        audio_segments: list,
+        output_path: str,
+        background_volume: float = 0.15,
+        tts_volume: float = 1.0,
+    ) -> ProcessingResult:
+        """
+        Audio-only dub mix — same ducking logic as stitch_video but outputs
+        a .aac file with no video stream. Much faster than full video encode.
+        """
+        if not self.ffmpeg_available:
+            return ProcessingResult(success=False, output_path=None,
+                                    file_size_mb=0, duration_seconds=0,
+                                    error="FFmpeg not installed")
+
+        valid_segments = [
+            s for s in audio_segments
+            if s.get('file_path') and os.path.exists(s.get('file_path'))
+        ]
+        if not valid_segments:
+            return ProcessingResult(success=False, output_path=None,
+                                    file_size_mb=0, duration_seconds=0,
+                                    error="No audio segments provided")
+
+        MAX_TEMPO = 2.0
+        inputs = ["-i", original_audio_path]
+        filter_parts = []
+        seg_labels = []
+
+        for idx, seg in enumerate(valid_segments):
+            file_path = seg['file_path']
+            start_s = self._parse_timestamp(seg.get('start_time', 0))
+            end_s = self._parse_timestamp(seg.get('end_time', 0))
+            slot_s = max(end_s - start_s, 0.0)
+            gen_s = self._get_audio_duration_seconds(file_path)
+
+            tempo = 1.0
+            if slot_s > 0 and gen_s > slot_s:
+                tempo = min(gen_s / slot_s, MAX_TEMPO)
+
+            input_index = idx + 1
+            inputs += ["-i", file_path]
+            delay_ms = max(int(round(start_s * 1000)), 0)
+            label = f"s{input_index}"
+            filter_parts.append(
+                f"[{input_index}:a]volume={tts_volume},atempo={tempo:.4f},"
+                f"adelay={delay_ms}|{delay_ms}[{label}]"
+            )
+            seg_labels.append(f"[{label}]")
+
+        # Duck original audio during speech segments
+        filter_parts.append(self._build_duck_filter(valid_segments, background_volume))
+        mix_inputs = seg_labels + ["[bg]"]
+
+        filter_parts.append(
+            f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:"
+            f"duration=longest:normalize=0[aout]"
+        )
+
+        cmd = ["ffmpeg", "-y"] + inputs + [
+            "-filter_complex", ";".join(filter_parts),
+            "-map", "[aout]",
+            "-c:a", "aac", "-b:a", "128k",
+            output_path,
+        ]
+
+        print(f"🎙️ Mixing audio dub ({len(valid_segments)} segments)...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        if result.returncode != 0:
+            return ProcessingResult(success=False, output_path=None,
+                                    file_size_mb=0, duration_seconds=0,
+                                    error=f"FFmpeg audio mix failed: {result.stderr[-2000:]}")
+
+        size_mb = os.path.getsize(output_path) / (1024 * 1024)
+        duration = self._get_audio_duration_seconds(output_path)
+        print(f"✅ Audio dub ready: {size_mb:.1f}MB, {duration:.1f}s")
+        return ProcessingResult(success=True, output_path=output_path,
+                                file_size_mb=size_mb, duration_seconds=duration)
+
     def create_whatsapp_version(
         self,
         input_path: str,

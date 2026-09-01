@@ -206,6 +206,78 @@ class GeminiService:
             "_full_analysis": analysis
         }
     
+    async def analyze_audio(
+        self,
+        audio_path: str,
+        target_language: str = "hindi",
+    ) -> dict:
+        """
+        Analyze a local audio file (extracted from video) instead of the full video.
+        Uses Gemini Files API — audio files are tiny vs video, so no time limit issues.
+        Returns the same segment dict format as analyze_video.
+        """
+        if not self.is_configured():
+            return {"error": "Gemini API not configured. Set GOOGLE_API_KEY."}
+
+        try:
+            ext = Path(audio_path).suffix.lower()
+            mime = "audio/mp4" if ext in (".m4a", ".mp4", ".aac") else "audio/mpeg"
+            print(f"📤 Uploading audio to Gemini Files API: {audio_path} ({mime})")
+            audio_file = self.client.files.upload(file=audio_path, config={"mime_type": mime})
+            print(f"📁 Audio uploaded: {audio_file.name}")
+
+            while audio_file.state.name == "PROCESSING":
+                time.sleep(2)
+                audio_file = self.client.files.get(name=audio_file.name)
+
+            if audio_file.state.name == "FAILED":
+                return {"error": "Audio processing failed in Gemini Files API"}
+
+            print("✅ Audio ready for analysis")
+        except Exception as e:
+            return {"error": f"Failed to upload audio: {str(e)}"}
+
+        prompt = self._build_analysis_prompt(target_language)
+        print(f"Sending audio payload (+ prompt len={len(prompt)})")
+
+        response = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                print(f"🧠 Analyzing audio (attempt {attempt + 1}/{MAX_RETRIES})...")
+                response = self.client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=[audio_file, prompt],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    )
+                )
+                print("✅ Audio analysis complete")
+                break
+            except TimeoutError as e:
+                if attempt == MAX_RETRIES - 1:
+                    return {"status": "failed", "reason": "API Timeout — try a shorter clip."}
+                time.sleep(INITIAL_RETRY_DELAY_SECONDS * (2 ** attempt))
+            except Exception as e:
+                error_str = str(e).lower()
+                print(f"❌ Gemini audio error on attempt {attempt + 1}: {e}")
+                if any(err in error_str for err in ["resourceexhausted", "429", "quota"]):
+                    if attempt == MAX_RETRIES - 1:
+                        return {"status": "failed", "reason": "Quota exceeded. Try again soon."}
+                    time.sleep(INITIAL_RETRY_DELAY_SECONDS * (2 ** attempt))
+                else:
+                    raise e
+
+        if response is None:
+            return {"error": "Failed to get response from Gemini API"}
+
+        try:
+            result = json.loads(response.text)
+            result["source_language"] = "english"
+            result["target_language"] = target_language
+            return result
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse Gemini response", "raw_response": response.text}
+
     def _build_analysis_prompt(self, target_language: str, continuation_context: str = None) -> str:
         """Build the comprehensive analysis prompt"""
         

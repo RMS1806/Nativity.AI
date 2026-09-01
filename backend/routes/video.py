@@ -34,7 +34,7 @@ from services.db_service import db_service
 from services.job_service import job_service
 from services.redis_service import redis_service
 from services.queue_service import queue_service, JobPriority
-from tasks import _run_localization, _run_draft_creation
+from tasks import _run_localization, _run_draft_creation, _run_audio_localization
 
 router = APIRouter(prefix="/api/video", tags=["Video Localization"])
 
@@ -95,6 +95,41 @@ async def start_localization(
         "job_id": job.job_id,
         "status": "processing",
         "message": "Localization started. Poll /api/video/job/{job_id} for status."
+    }
+
+
+@router.post("/localize-audio")
+async def start_audio_localization(
+    request: LocalizationRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Audio-only dub pipeline.
+    Extracts audio from the uploaded video, dubs it into target_language,
+    and returns a .aac file — no video encode, no length limit.
+    Poll /api/video/job/{job_id} for status just like the full pipeline.
+    """
+    user_id = user.get("sub")
+
+    job = job_service.create_job(
+        user_id=user_id,
+        input_file=request.file_key,
+        target_language=request.target_language.value
+    )
+
+    background_tasks.add_task(
+        _run_audio_localization,
+        job.job_id,
+        user_id,
+        request.file_key,
+        request.target_language.value,
+    )
+
+    return {
+        "job_id": job.job_id,
+        "status": "processing",
+        "message": "Audio localization started. Poll /api/video/job/{job_id} for status."
     }
 
 

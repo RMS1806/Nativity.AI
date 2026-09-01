@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useUser, UserButton } from '@clerk/nextjs';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { Plus, Zap, Home, LayoutDashboard, Globe, BookOpen, FolderOpen } from 'lucide-react';
+import { Plus, Zap, Home, LayoutDashboard, Globe, BookOpen, FolderOpen, Music } from 'lucide-react';
 import Link from 'next/link';
 import HistoryTable from '@/components/HistoryTable';
 import { useHistory, DashboardStats } from '@/lib/auth-api';
@@ -125,6 +125,13 @@ export default function DashboardPage() {
                         <LayoutDashboard className="w-5 h-5" />
                         Dashboard
                     </div>
+                    <Link
+                        href="/audio-dub"
+                        className="flex items-center gap-3 px-4 py-3 font-mono-label text-[#1A1A1A] hover:bg-[#eee7df] hover:translate-x-1 transition-all"
+                    >
+                        <Music className="w-5 h-5" />
+                        Audio Dub
+                    </Link>
                 </nav>
                 <div className="mt-auto space-y-2 pt-4" style={{ borderTop: '3px solid #1A1A1A' }}>
                     <Link href="/">
