@@ -6,12 +6,17 @@ Uses ffmpeg-python for programmatic control of FFmpeg
 """
 
 import ffmpeg
+import math
 import subprocess
 import os
 import shutil
 import tempfile
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
+
+# Chunked FFmpeg constants — keeps peak RAM low on Render free tier
+_BATCH_THRESHOLD = 20   # above this many segments, use chunked mode
+_CHUNK_WINDOW_S  = 90.0 # seconds per rendering window in chunked mode
 
 
 @dataclass
@@ -255,58 +260,28 @@ class FFmpegService:
         tts_delay_seconds: float = 0.0
     ) -> ProcessingResult:
         """
-        Mix original video audio (background) with generated TTS audio
-        
-        This is the main video processing function that:
-        1. Gets video info and checks for original audio stream
-        2. Creates a timeline of TTS audio segments
-        3. DELAYS TTS to match first spoken word (intro music preservation)
-        4. MIXES original audio (lowered) with TTS audio (full volume)
-        5. Keeps FULL video duration (no abrupt cuts)
-        6. Falls back to simple replacement if no original audio exists
-        
-        Args:
-            original_video_path: Path to original video file
-            audio_segments: List of dicts with file_path, start_time, end_time
-            output_path: Path to save final video
-            optimize_for_mobile: Apply mobile-optimized compression
-            background_volume: Volume level for original background audio (0.0-1.0, default 0.15 = 15%)
-            tts_volume: Volume level for TTS voiceover (0.0-1.0, default 1.0 = 100%)
-            tts_delay_seconds: Delay TTS audio by this many seconds to match first spoken word (default 0.0)
-        
-        Returns:
-            ProcessingResult with final video path and size
+        Mix original video audio (background) with generated TTS audio.
+
+        Routes to single-pass mode (≤ _BATCH_THRESHOLD segments) or chunked
+        mode (> _BATCH_THRESHOLD segments) to keep peak RAM predictable on
+        Render free tier.
         """
         if not self.ffmpeg_available:
             return ProcessingResult(
-                success=False,
-                output_path=None,
-                file_size_mb=0,
+                success=False, output_path=None, file_size_mb=0,
                 duration_seconds=0,
                 error="FFmpeg not installed. Please install FFmpeg: https://ffmpeg.org/download.html"
             )
-        
+
         try:
-            temp_dir = tempfile.mkdtemp(prefix="nativity_stitch_")
-            
-            # Step 1: Get video info
             video_info = self.get_video_info(original_video_path)
             if "error" in video_info:
                 raise Exception(f"Cannot read video: {video_info['error']}")
-            
+
             video_duration = video_info['duration']
-            
-            # Check if original video has an audio stream
             has_original_audio = video_info.get('audio', {}).get('codec') is not None
             print(f"🎵 Original video has audio: {has_original_audio}")
-            
-            # ─────────────────────────────────────────────────────────────
-            # Step 2: Build a TIME-ALIGNED dub track.
-            # For each segment we (a) speed it up (atempo) so it fits its
-            # original spoken time slot, and (b) place it at its real start
-            # timestamp (adelay). This keeps the dub in sync with the speaker
-            # instead of concatenating back-to-back and drifting past the end.
-            # ─────────────────────────────────────────────────────────────
+
             valid_segments = [
                 s for s in audio_segments
                 if s.get('file_path') and os.path.exists(s.get('file_path'))
@@ -314,115 +289,274 @@ class FFmpegService:
             if not valid_segments:
                 raise Exception("No audio segments provided")
 
-            MAX_TEMPO = 2.0  # strict-sync cap (single atempo filter max is 2.0x)
+            mode = "chunked" if len(valid_segments) > _BATCH_THRESHOLD else "single-pass"
+            print(f"🎬 Stitch: {len(valid_segments)} segments → {mode} mode")
 
-            inputs = ["-i", original_video_path]
-            filter_parts = []
-            seg_labels = []
-
-            for idx, seg in enumerate(valid_segments):
-                file_path = seg['file_path']
-                start_s = self._parse_timestamp(seg.get('start_time', 0))
-                end_s = self._parse_timestamp(seg.get('end_time', 0))
-                slot_s = max(end_s - start_s, 0.0)
-                gen_s = self._get_audio_duration_seconds(file_path)
-
-                # Speed up to fit the slot (strict sync); never slow down below 1.0x
-                tempo = 1.0
-                if slot_s > 0 and gen_s > slot_s:
-                    tempo = min(gen_s / slot_s, MAX_TEMPO)
-
-                input_index = idx + 1  # input 0 is the video
-                inputs += ["-i", file_path]
-
-                delay_ms = max(int(round(start_s * 1000)), 0)
-                label = f"s{input_index}"
-                # volume -> time-stretch (pitch-preserving) -> place at start time
-                filter_parts.append(
-                    f"[{input_index}:a]volume={tts_volume},atempo={tempo:.4f},"
-                    f"adelay={delay_ms}|{delay_ms}[{label}]"
+            if mode == "chunked":
+                return self._stitch_chunked(
+                    original_video_path=original_video_path,
+                    valid_segments=valid_segments,
+                    output_path=output_path,
+                    video_duration=video_duration,
+                    has_original_audio=has_original_audio,
+                    optimize_for_mobile=optimize_for_mobile,
+                    background_volume=background_volume,
+                    tts_volume=tts_volume,
                 )
-                seg_labels.append(f"[{label}]")
-
-            print(
-                f"🎙️ Time-aligning {len(valid_segments)} segments "
-                f"(strict sync, max {MAX_TEMPO}x), bg audio={has_original_audio}"
-            )
-
-            # Lowered original audio as a background bed (if present)
-            mix_inputs = list(seg_labels)
-            if has_original_audio:
-                filter_parts.append(f"[0:a]volume={background_volume}[bg]")
-                mix_inputs.append("[bg]")
-
-            # Mix everything, then trim to the video length so audio never
-            # runs past the end of the video.
-            if len(mix_inputs) > 1:
-                filter_parts.append(
-                    f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:"
-                    f"duration=longest:normalize=0[mixed]"
-                )
-                mixed_label = "[mixed]"
             else:
-                mixed_label = mix_inputs[0]
+                return self._stitch_single_pass(
+                    original_video_path=original_video_path,
+                    valid_segments=valid_segments,
+                    output_path=output_path,
+                    video_duration=video_duration,
+                    has_original_audio=has_original_audio,
+                    optimize_for_mobile=optimize_for_mobile,
+                    background_volume=background_volume,
+                    tts_volume=tts_volume,
+                )
 
-            filter_parts.append(
-                f"{mixed_label}atrim=0:{video_duration:.3f},asetpts=PTS-STARTPTS[aout]"
+        except ffmpeg.Error as e:
+            return ProcessingResult(
+                success=False, output_path=None, file_size_mb=0, duration_seconds=0,
+                error=f"FFmpeg error: {e.stderr.decode() if e.stderr else str(e)}"
+            )
+        except Exception as e:
+            return ProcessingResult(
+                success=False, output_path=None, file_size_mb=0,
+                duration_seconds=0, error=str(e)
             )
 
-            filter_complex = ";".join(filter_parts)
+    def _stitch_single_pass(
+        self, original_video_path, valid_segments, output_path,
+        video_duration, has_original_audio, optimize_for_mobile,
+        background_volume, tts_volume
+    ) -> ProcessingResult:
+        """Single filter_complex pass — used when segment count is small."""
+        MAX_TEMPO = 2.0
+        inputs = ["-i", original_video_path]
+        filter_parts = []
+        seg_labels = []
 
-            cmd = ["ffmpeg", "-y"] + inputs + [
-                "-filter_complex", filter_complex,
-                "-map", "0:v",
-                "-map", "[aout]",
+        for idx, seg in enumerate(valid_segments):
+            file_path = seg['file_path']
+            start_s = self._parse_timestamp(seg.get('start_time', 0))
+            end_s = self._parse_timestamp(seg.get('end_time', 0))
+            slot_s = max(end_s - start_s, 0.0)
+            gen_s = self._get_audio_duration_seconds(file_path)
+
+            tempo = 1.0
+            if slot_s > 0 and gen_s > slot_s:
+                tempo = min(gen_s / slot_s, MAX_TEMPO)
+
+            input_index = idx + 1
+            inputs += ["-i", file_path]
+            delay_ms = max(int(round(start_s * 1000)), 0)
+            label = f"s{input_index}"
+            filter_parts.append(
+                f"[{input_index}:a]volume={tts_volume},atempo={tempo:.4f},"
+                f"adelay={delay_ms}|{delay_ms}[{label}]"
+            )
+            seg_labels.append(f"[{label}]")
+
+        print(f"🎙️ Time-aligning {len(valid_segments)} segments (max {MAX_TEMPO}x)")
+
+        mix_inputs = list(seg_labels)
+        if has_original_audio:
+            filter_parts.append(f"[0:a]volume={background_volume}[bg]")
+            mix_inputs.append("[bg]")
+
+        if len(mix_inputs) > 1:
+            filter_parts.append(
+                f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:"
+                f"duration=longest:normalize=0[mixed]"
+            )
+            mixed_label = "[mixed]"
+        else:
+            mixed_label = mix_inputs[0]
+
+        filter_parts.append(
+            f"{mixed_label}atrim=0:{video_duration:.3f},asetpts=PTS-STARTPTS[aout]"
+        )
+
+        cmd = ["ffmpeg", "-y"] + inputs + [
+            "-filter_complex", ";".join(filter_parts),
+            "-map", "0:v", "-map", "[aout]",
+        ]
+        if optimize_for_mobile:
+            cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "28",
+                    "-vf", "scale=-2:480", "-movflags", "+faststart"]
+        else:
+            cmd += ["-c:v", "copy"]
+        cmd += ["-c:a", "aac", "-b:a", "128k", output_path]
+
+        print("🎬 Running FFmpeg (single-pass)...")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise Exception(f"FFmpeg stitching failed: {result.stderr[-2000:]}")
+
+        info = self.get_video_info(output_path)
+        return ProcessingResult(
+            success=True, output_path=output_path,
+            file_size_mb=info.get('size_mb', 0),
+            duration_seconds=info.get('duration', 0)
+        )
+
+    def _render_tts_window(
+        self, window_segs: list, t_start: float, window_dur: float,
+        tts_volume: float, output_path: str
+    ):
+        """
+        Render TTS audio for one time window to an AAC file.
+        Segment delays are relative to t_start. Original audio is NOT mixed here
+        (handled later in the final mux so only one amix is ever needed).
+        """
+        MAX_TEMPO = 2.0
+
+        if not window_segs:
+            # No speech in this window — output silence
+            cmd = [
+                "ffmpeg", "-y",
+                "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                "-t", f"{window_dur:.3f}",
+                "-c:a", "aac", "-b:a", "128k",
+                output_path,
             ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception(f"FFmpeg silence gen failed: {result.stderr[-500:]}")
+            return
+
+        inputs = []
+        filter_parts = []
+        seg_labels = []
+
+        for idx, seg in enumerate(window_segs):
+            file_path = seg['file_path']
+            start_s = self._parse_timestamp(seg.get('start_time', 0))
+            end_s = self._parse_timestamp(seg.get('end_time', 0))
+            slot_s = max(end_s - start_s, 0.0)
+            gen_s = self._get_audio_duration_seconds(file_path)
+
+            tempo = 1.0
+            if slot_s > 0 and gen_s > slot_s:
+                tempo = min(gen_s / slot_s, MAX_TEMPO)
+
+            inputs += ["-i", file_path]
+            delay_ms = max(int(round((start_s - t_start) * 1000)), 0)
+            label = f"s{idx}"
+            filter_parts.append(
+                f"[{idx}:a]volume={tts_volume},atempo={tempo:.4f},"
+                f"adelay={delay_ms}|{delay_ms}[{label}]"
+            )
+            seg_labels.append(f"[{label}]")
+
+        if len(seg_labels) > 1:
+            filter_parts.append(
+                f"{''.join(seg_labels)}amix=inputs={len(seg_labels)}:"
+                f"duration=longest:normalize=0[mixed]"
+            )
+            mixed_label = "[mixed]"
+        else:
+            mixed_label = seg_labels[0]
+
+        filter_parts.append(
+            f"{mixed_label}atrim=0:{window_dur:.3f},asetpts=PTS-STARTPTS[aout]"
+        )
+
+        cmd = ["ffmpeg", "-y"] + inputs + [
+            "-filter_complex", ";".join(filter_parts),
+            "-map", "[aout]",
+            "-c:a", "aac", "-b:a", "128k",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise Exception(
+                f"FFmpeg window render failed (t={t_start:.0f}s): {result.stderr[-1000:]}"
+            )
+
+    def _stitch_chunked(
+        self, original_video_path, valid_segments, output_path,
+        video_duration, has_original_audio, optimize_for_mobile,
+        background_volume, tts_volume
+    ) -> ProcessingResult:
+        """
+        Chunked FFmpeg path for large segment counts.
+
+        1. Divide video into _CHUNK_WINDOW_S windows.
+        2. Render TTS audio for each window (small filter_complex, low RAM).
+        3. Concat all window chunks into one full-length TTS track.
+        4. Final mux: video + TTS track + original audio background (simple 2-input amix).
+        """
+        temp_dir = tempfile.mkdtemp(prefix="nativity_chunks_")
+        try:
+            n_windows = math.ceil(video_duration / _CHUNK_WINDOW_S)
+            chunk_paths = []
+
+            print(f"🎬 Chunked mode: {n_windows} windows of {_CHUNK_WINDOW_S:.0f}s each")
+
+            for i in range(n_windows):
+                t_start = i * _CHUNK_WINDOW_S
+                t_end = min((i + 1) * _CHUNK_WINDOW_S, video_duration)
+                window_dur = t_end - t_start
+
+                window_segs = [
+                    s for s in valid_segments
+                    if t_start <= self._parse_timestamp(s.get('start_time', 0)) < t_end
+                ]
+
+                chunk_path = os.path.join(temp_dir, f"chunk_{i:04d}.aac")
+                print(f"  Window {i}: [{t_start:.0f}s–{t_end:.0f}s] {len(window_segs)} segs")
+                self._render_tts_window(window_segs, t_start, window_dur, tts_volume, chunk_path)
+                chunk_paths.append(chunk_path)
+
+            # Concat all window chunks into one full TTS track
+            tts_full = os.path.join(temp_dir, "tts_full.aac")
+            concat_txt = os.path.join(temp_dir, "concat.txt")
+            with open(concat_txt, "w") as f:
+                for cp in chunk_paths:
+                    f.write(f"file '{cp.replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'\n")
+
+            cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                   "-i", concat_txt, "-c:a", "aac", "-b:a", "128k", tts_full]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception(f"FFmpeg concat failed: {result.stderr[-1000:]}")
+
+            # Final mux: original video + TTS track, mix with original audio at bg_vol
+            cmd = ["ffmpeg", "-y", "-i", original_video_path, "-i", tts_full]
+
+            if has_original_audio:
+                fc = (
+                    f"[0:a]volume={background_volume}[bg];"
+                    f"[bg][1:a]amix=inputs=2:duration=first:normalize=0[aout]"
+                )
+                cmd += ["-filter_complex", fc, "-map", "0:v", "-map", "[aout]"]
+            else:
+                cmd += ["-map", "0:v", "-map", "1:a"]
 
             if optimize_for_mobile:
-                cmd += [
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "28",
-                    "-vf", "scale=-2:480", "-movflags", "+faststart",
-                ]
+                cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "28",
+                        "-vf", "scale=-2:480", "-movflags", "+faststart"]
             else:
                 cmd += ["-c:v", "copy"]
 
             cmd += ["-c:a", "aac", "-b:a", "128k", output_path]
 
-            print("🎬 Running FFmpeg (time-aligned dub)...")
+            print("🎬 Running final mux...")
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
-                raise Exception(f"FFmpeg stitching failed: {result.stderr[-2000:]}")
+                raise Exception(f"FFmpeg final mux failed: {result.stderr[-2000:]}")
 
-            # Step 4: Get final output info
-            final_info = self.get_video_info(output_path)
-            
-            # Cleanup temp files
-            shutil.rmtree(temp_dir)
-            
+            info = self.get_video_info(output_path)
             return ProcessingResult(
-                success=True,
-                output_path=output_path,
-                file_size_mb=final_info.get('size_mb', 0),
-                duration_seconds=final_info.get('duration', 0)
+                success=True, output_path=output_path,
+                file_size_mb=info.get('size_mb', 0),
+                duration_seconds=info.get('duration', 0)
             )
-            
-        except ffmpeg.Error as e:
-            error_msg = e.stderr.decode() if e.stderr else str(e)
-            return ProcessingResult(
-                success=False,
-                output_path=None,
-                file_size_mb=0,
-                duration_seconds=0,
-                error=f"FFmpeg error: {error_msg}"
-            )
-        except Exception as e:
-            return ProcessingResult(
-                success=False,
-                output_path=None,
-                file_size_mb=0,
-                duration_seconds=0,
-                error=str(e)
-            )
+
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
     
     def create_whatsapp_version(
         self,
