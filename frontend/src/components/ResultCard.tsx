@@ -10,7 +10,8 @@ import {
     CheckCircle2,
     Globe,
     Smartphone,
-    Share2
+    Share2,
+    Music
 } from 'lucide-react';
 import { LocalizationJob, CulturalReport } from '@/types';
 import { CulturalReportModal } from './CulturalReport';
@@ -120,6 +121,20 @@ export default function ResultCard({ job }: ResultCardProps) {
                         >
                             <Share2 className="w-5 h-5" />
                             WhatsApp Version
+                        </a>
+                    )}
+
+                    {/* YouTube Audio Dub Track */}
+                    {results?.dub_audio_url && (
+                        <a
+                            href={results.dub_audio_url}
+                            download
+                            className="flex items-center justify-center gap-2 py-4 px-6 font-mono-label font-bold uppercase tracking-wider neo-border neo-shadow neo-shadow-hover neo-shadow-active transition-all duration-200 text-[#1A1A1A]"
+                            style={{ backgroundColor: '#FF6B35' }}
+                            title="Upload this .aac file to YouTube Studio as an alternate audio track"
+                        >
+                            <Music className="w-5 h-5" />
+                            YT Audio Track
                         </a>
                     )}
 

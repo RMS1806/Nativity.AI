@@ -399,6 +399,28 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
             message=f"✅ Video stitched! Size: {stitch_result.file_size_mb:.1f}MB", user_id=user_id
         )
 
+        # ── Step 4.5: Extract audio-only dub track for YouTube ────────────────
+        # Strip the video stream from the already-stitched output — instant,
+        # no re-encode. Produces the alternate audio track creators upload to
+        # YouTube Studio so viewers can switch between Original and Hindi.
+        dub_audio_url = None
+        dub_audio_s3_key = None
+        dub_audio_path = os.path.join(temp_dir, "dub_audio.aac")
+        try:
+            audio_ext = _subprocess.run(
+                ["ffmpeg", "-y", "-i", output_video_path, "-vn", "-c:a", "copy", dub_audio_path],
+                capture_output=True, text=True, timeout=60
+            )
+            if audio_ext.returncode == 0 and os.path.exists(dub_audio_path):
+                dub_audio_s3_key = f"outputs/{job_id}/dub_audio_{target_language}.aac"
+                dub_upload = s3_service.upload_file(dub_audio_path, dub_audio_s3_key)
+                if dub_upload.get("success"):
+                    dub_dl = s3_service.generate_presigned_download_url(dub_audio_s3_key)
+                    dub_audio_url = dub_dl.get("download_url")
+                    print(f"[Task] Dub audio track uploaded: {dub_audio_s3_key}")
+        except Exception as dub_err:
+            print(f"[Task] Dub audio extraction non-fatal: {dub_err}")
+
         # ── Step 5: Free input + audio early — output upload is next ─────────
         try:
             os.remove(local_video_path)
@@ -467,6 +489,8 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
             "file_size_mb": stitch_result.file_size_mb,
             "words_localized": sum(len(seg.get("translated_text", "").split()) for seg in segments),
             "subtitle_s3_key": subtitle_s3_key,
+            "dub_audio_url": dub_audio_url,
+            "dub_audio_s3_key": dub_audio_s3_key,
         }
 
         job_service.complete_job(
