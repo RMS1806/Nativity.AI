@@ -390,7 +390,7 @@ class FFmpegService:
         cmd += ["-c:a", "aac", "-b:a", "128k", output_path]
 
         print("🎬 Running FFmpeg (single-pass)...")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         if result.returncode != 0:
             raise Exception(f"FFmpeg stitching failed: {result.stderr[-2000:]}")
 
@@ -421,7 +421,7 @@ class FFmpegService:
                 "-c:a", "aac", "-b:a", "128k",
                 output_path,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
             if result.returncode != 0:
                 raise Exception(f"FFmpeg silence gen failed: {result.stderr[-500:]}")
             return
@@ -469,7 +469,7 @@ class FFmpegService:
             "-c:a", "aac", "-b:a", "128k",
             output_path,
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         if result.returncode != 0:
             raise Exception(
                 f"FFmpeg window render failed (t={t_start:.0f}s): {result.stderr[-1000:]}"
@@ -519,7 +519,7 @@ class FFmpegService:
 
             cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
                    "-i", concat_txt, "-c:a", "aac", "-b:a", "128k", tts_full]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
             if result.returncode != 0:
                 raise Exception(f"FFmpeg concat failed: {result.stderr[-1000:]}")
 
@@ -544,7 +544,7 @@ class FFmpegService:
             cmd += ["-c:a", "aac", "-b:a", "128k", output_path]
 
             print("🎬 Running final mux...")
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
             if result.returncode != 0:
                 raise Exception(f"FFmpeg final mux failed: {result.stderr[-2000:]}")
 
