@@ -318,9 +318,26 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
                 _analyze_video_in_chunks(public_url, target_language, temp_dir)
             )
         else:
-            analysis_result = asyncio.run(
-                gemini_service.analyze_video(video_url=public_url, target_language=target_language)
-            )
+            try:
+                analysis_result = asyncio.run(
+                    gemini_service.analyze_video(video_url=public_url, target_language=target_language)
+                )
+            except Exception as url_err:
+                # 400 INVALID_ARGUMENT means Gemini couldn't fetch or decode the R2
+                # URL (wrong codec, transient R2→Google block, etc.). Fall back to
+                # downloading the video locally and using the Files API instead.
+                if "invalid_argument" in str(url_err).lower() or "400" in str(url_err):
+                    print(f"[Task] Gemini URL fetch failed ({url_err}) — falling back to Files API")
+                    dl = s3_service.download_file(file_key, local_video_path)
+                    if "error" in dl:
+                        raise Exception(f"Fallback download failed: {dl['error']}")
+                    analysis_result = asyncio.run(
+                        gemini_service.analyze_video(
+                            video_path=local_video_path, target_language=target_language
+                        )
+                    )
+                else:
+                    raise
         if "error" in analysis_result:
             raise Exception(f"Gemini analysis failed: {analysis_result['error']}")
 
