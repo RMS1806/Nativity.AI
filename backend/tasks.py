@@ -69,18 +69,31 @@ GEMINI_CHUNK_THRESHOLD_S = 240.0  # videos longer than this get chunked (4 min)
 GEMINI_CHUNK_TARGET_S    = 240.0  # aim for ~4-min chunks
 
 
-def _get_video_duration_url(video_url: str) -> float:
-    """ffprobe a public URL to get duration. Only reads container headers — no full download."""
+def _get_video_info_url(video_url: str) -> tuple[float, str]:
+    """
+    ffprobe a public URL to get duration and video codec.
+    Only reads container headers — no full download.
+    Returns (duration_seconds, codec_name).
+    """
     try:
         r = _subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", video_url],
+            ["ffprobe", "-v", "quiet", "-print_format", "json",
+             "-show_format", "-show_streams", "-select_streams", "v:0", video_url],
             capture_output=True, text=True, timeout=30
         )
         if r.returncode == 0:
-            return float(_json.loads(r.stdout).get("format", {}).get("duration", 0))
+            data = _json.loads(r.stdout)
+            duration = float(data.get("format", {}).get("duration", 0))
+            codec = (data.get("streams") or [{}])[0].get("codec_name", "unknown")
+            return duration, codec
     except Exception as e:
-        print(f"[VAD] ffprobe duration check failed: {e}")
-    return 0.0
+        print(f"[ffprobe] URL check failed: {e}")
+    return 0.0, "unknown"
+
+
+def _get_video_duration_url(video_url: str) -> float:
+    duration, _ = _get_video_info_url(video_url)
+    return duration
 
 
 def _find_silence_cut_points(audio_path: str, target_s: float = 240.0, min_silence_s: float = 0.5) -> list:
@@ -309,13 +322,28 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
             )
 
         print(f"[Task] Using R2 public URL for Gemini: {public_url}")
-        video_duration = _get_video_duration_url(public_url)
-        print(f"[Task] Video duration: {video_duration:.1f}s (threshold: {GEMINI_CHUNK_THRESHOLD_S}s)")
+        video_duration, video_codec = _get_video_info_url(public_url)
+        print(f"[Task] Video duration: {video_duration:.1f}s, codec: {video_codec} (threshold: {GEMINI_CHUNK_THRESHOLD_S}s)")
+
+        # Gemini's URL fetcher only reliably handles H.264. For HEVC/VP9/AV1/other
+        # codecs download first and use the Files API (which transcodes on Google's side).
+        gemini_needs_download = video_codec not in ("h264", "unknown")
+        if gemini_needs_download:
+            print(f"[Task] Codec {video_codec!r} not H.264 — downloading for Files API")
+            dl = s3_service.download_file(file_key, local_video_path)
+            if "error" in dl:
+                raise Exception(f"Download for Files API failed: {dl['error']}")
 
         if video_duration > GEMINI_CHUNK_THRESHOLD_S:
             print(f"[Task] Long video — using VAD-chunked Gemini analysis")
             analysis_result = asyncio.run(
                 _analyze_video_in_chunks(public_url, target_language, temp_dir)
+            )
+        elif gemini_needs_download:
+            analysis_result = asyncio.run(
+                gemini_service.analyze_video(
+                    video_path=local_video_path, target_language=target_language
+                )
             )
         else:
             try:
@@ -323,11 +351,9 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
                     gemini_service.analyze_video(video_url=public_url, target_language=target_language)
                 )
             except Exception as url_err:
-                # 400 INVALID_ARGUMENT means Gemini couldn't fetch or decode the R2
-                # URL (wrong codec, transient R2→Google block, etc.). Fall back to
-                # downloading the video locally and using the Files API instead.
+                # Safety net: URL fetch still failed despite H.264 (transient R2 block).
                 if "invalid_argument" in str(url_err).lower() or "400" in str(url_err):
-                    print(f"[Task] Gemini URL fetch failed ({url_err}) — falling back to Files API")
+                    print(f"[Task] URL fetch failed ({url_err}) — downloading as last resort")
                     dl = s3_service.download_file(file_key, local_video_path)
                     if "error" in dl:
                         raise Exception(f"Fallback download failed: {dl['error']}")
