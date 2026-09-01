@@ -383,13 +383,15 @@ class FFmpegService:
             "-map", "0:v", "-map", "[aout]",
         ]
         if optimize_for_mobile:
-            cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "28",
+            # ultrafast for short clips — quality gap vs fast is negligible; speed is 3-5×
+            preset = "ultrafast" if video_duration <= 120 else "fast"
+            cmd += ["-c:v", "libx264", "-preset", preset, "-crf", "28",
                     "-vf", "scale=-2:480", "-movflags", "+faststart"]
         else:
             cmd += ["-c:v", "copy"]
         cmd += ["-c:a", "aac", "-b:a", "128k", output_path]
 
-        print("🎬 Running FFmpeg (single-pass)...")
+        print(f"🎬 Running FFmpeg (single-pass, preset={preset if optimize_for_mobile else 'copy'}, dur={video_duration:.0f}s)...")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         if result.returncode != 0:
             raise Exception(f"FFmpeg stitching failed: {result.stderr[-2000:]}")
@@ -536,14 +538,15 @@ class FFmpegService:
                 cmd += ["-map", "0:v", "-map", "1:a"]
 
             if optimize_for_mobile:
-                cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "28",
+                preset = "ultrafast" if video_duration <= 120 else "fast"
+                cmd += ["-c:v", "libx264", "-preset", preset, "-crf", "28",
                         "-vf", "scale=-2:480", "-movflags", "+faststart"]
             else:
                 cmd += ["-c:v", "copy"]
 
             cmd += ["-c:a", "aac", "-b:a", "128k", output_path]
 
-            print("🎬 Running final mux...")
+            print(f"🎬 Running final mux (preset={preset if optimize_for_mobile else 'copy'}, dur={video_duration:.0f}s)...")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
             if result.returncode != 0:
                 raise Exception(f"FFmpeg final mux failed: {result.stderr[-2000:]}")

@@ -12,7 +12,7 @@ import os
 import shutil
 import tempfile
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models import (
     VideoUploadRequest,
@@ -32,10 +32,13 @@ from config import settings
 from dependencies import get_current_user, get_optional_user
 from services.db_service import db_service
 from services.job_service import job_service
+from services.redis_service import redis_service
 from services.queue_service import queue_service, JobPriority
 from tasks import _run_localization, _run_draft_creation
 
 router = APIRouter(prefix="/api/video", tags=["Video Localization"])
+
+_STALE_JOB_MINUTES = 12  # no progress update in 12 min = pipeline is dead
 
 
 @router.post("/upload-url", response_model=VideoUploadResponse)
@@ -168,6 +171,33 @@ async def get_job_status(job_id: str):
     job = job_service.get_job_status(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    # Stale job detection: background thread may have crashed without updating Redis.
+    # If a non-terminal job has had no progress update for _STALE_JOB_MINUTES, mark
+    # it failed so the user doesn't wait forever for something already dead.
+    if job.status in (JobStatus.PROCESSING, JobStatus.PENDING):
+        raw = redis_service.get_job_status(job_id)
+        updated_at_str = (raw or {}).get("updated_at", "")
+        if updated_at_str:
+            try:
+                updated_at = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+                elapsed_min = (datetime.now(timezone.utc) - updated_at).total_seconds() / 60
+                if elapsed_min > _STALE_JOB_MINUTES:
+                    msg = (
+                        f"Pipeline stalled — no progress update in {int(elapsed_min)} min. "
+                        "The background process likely crashed. Please retry."
+                    )
+                    print(f"⚠️  Stale job detected: {job_id} (last update {elapsed_min:.1f} min ago)")
+                    job_service.update_job_status(
+                        job_id=job_id,
+                        status=JobStatus.FAILED,
+                        message=msg,
+                        error="stale_pipeline",
+                    )
+                    job.status = JobStatus.FAILED
+                    job.message = msg
+            except Exception as e:
+                print(f"Stale job check error: {e}")
 
     response = job.dict()
 
