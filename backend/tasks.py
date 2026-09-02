@@ -903,15 +903,42 @@ def _run_shorts_generation_inner(source_job_id: str, user_id: str, target_count:
 
         print(f"[Shorts] Source video: {public_url}")
 
+        # ── Step 1b: Probe actual video duration ─────────────────────────────
+        video_duration_s = 0.0
+        try:
+            info = ffmpeg_service.get_video_info(public_url)
+            video_duration_s = float(info.get("duration", 0) or 0)
+            print(f"[Shorts] Video duration: {video_duration_s:.1f}s")
+        except Exception as e:
+            print(f"[Shorts] Could not probe duration: {e}")
+
         # ── Step 2: Gemini clip suggestions ──────────────────────────────────
         print(f"[Shorts] Requesting {target_count} clip suggestions from Gemini...")
         clips = asyncio.run(
-            gemini_service.generate_shorts_suggestions(public_url, target_count)
+            gemini_service.generate_shorts_suggestions(public_url, target_count, video_duration_s)
         )
         print(f"[Shorts] Got {len(clips)} suggestions")
 
         if not clips:
             print("[Shorts] No clips returned — nothing to extract")
+            return
+
+        # Filter out clips that fall outside the actual video duration
+        if video_duration_s > 0:
+            valid_clips = []
+            for c in clips:
+                s = float(c.get("start_time_s", 0))
+                e = float(c.get("end_time_s", 0))
+                if s >= video_duration_s:
+                    print(f"[Shorts] Dropping clip '{c.get('title')}': start {s}s >= duration {video_duration_s:.1f}s")
+                    continue
+                c["end_time_s"] = min(e, video_duration_s)
+                valid_clips.append(c)
+            clips = valid_clips
+            print(f"[Shorts] {len(clips)} clip(s) within video duration")
+
+        if not clips:
+            print("[Shorts] No valid clips after duration filter — nothing to extract")
             return
 
         temp_dir = tempfile.mkdtemp(prefix=f"nativity_shorts_{source_job_id[:8]}_")

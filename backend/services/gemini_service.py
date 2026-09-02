@@ -551,7 +551,7 @@ You MUST respond ONLY with a raw, valid JSON object using exactly these keys. Do
         return {"error": "Failed to get response from Gemini API"}
 
     async def generate_shorts_suggestions(
-        self, video_url: str, target_count: int = 5
+        self, video_url: str, target_count: int = 5, video_duration_s: float = 0
     ) -> list:
         """
         Analyze a video and return clip suggestions for short-form content.
@@ -561,10 +561,25 @@ You MUST respond ONLY with a raw, valid JSON object using exactly these keys. Do
         if not self.is_configured():
             return []
 
+        duration_line = (
+            f"- The video is exactly {video_duration_s:.1f} seconds long. "
+            f"All timestamps MUST be within 0–{video_duration_s:.1f}s.\n"
+            if video_duration_s > 0
+            else ""
+        )
+
+        # Adapt clip length to the actual video duration
+        if video_duration_s > 0 and video_duration_s < 60:
+            min_clip = max(5, int(video_duration_s * 0.3))
+            max_clip = int(video_duration_s * 0.9)
+            clip_rule = f"- Each clip must be between {min_clip} and {max_clip} seconds long (video is short)"
+        else:
+            clip_rule = "- Each clip must be between 45 and 90 seconds long"
+
         prompt = f"""Analyze this video and identify the {target_count} best moments to extract as short-form clips (YouTube Shorts or Instagram Reels style).
 
 Rules:
-- Each clip must be between 45 and 90 seconds long
+{duration_line}{clip_rule}
 - Clips must not overlap
 - Prioritize: key insights, surprising moments, clear standalone value, strong openings
 - Avoid: intros, outros, quiet transitions, mid-sentence cuts
@@ -581,7 +596,7 @@ Return a JSON object with exactly this structure:
   ]
 }}
 
-Return exactly {target_count} clips ordered by engagement potential (best first)."""
+Return up to {target_count} clips ordered by engagement potential (best first). If the video is too short for {target_count} non-overlapping clips, return fewer."""
 
         try:
             video_part = types.Part.from_uri(file_uri=video_url, mime_type="video/mp4")
