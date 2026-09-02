@@ -89,6 +89,9 @@ class DBService:
         words_localized: Optional[int] = None,
         progress: Optional[int] = None,
         error_message: Optional[str] = None,
+        job_type: Optional[str] = None,
+        dub_audio_s3_key: Optional[str] = None,
+        short_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Upsert a job row keyed on job_id. Provided fields overwrite; optional
@@ -119,6 +122,9 @@ class DBService:
             "cultural_report": json.dumps(cultural_report) if cultural_report else None,
             "cultural_analysis": json.dumps(cultural_analysis) if cultural_analysis else None,
             "draft_segments": json.dumps(draft_segments) if draft_segments else None,
+            "job_type": job_type or "localization",
+            "dub_audio_s3_key": dub_audio_s3_key,
+            "short_id": short_id,
         }
 
         query = """
@@ -126,12 +132,14 @@ class DBService:
                 job_id, user_id, target_language, input_file, status,
                 created_at, updated_at, output_url, output_s3_key, subtitle_s3_key,
                 whatsapp_url, file_size_mb, segments_count, words_localized, progress,
-                error_message, cultural_report, cultural_analysis, draft_segments
+                error_message, cultural_report, cultural_analysis, draft_segments,
+                job_type, dub_audio_s3_key, short_id
             ) VALUES (
                 %(job_id)s, %(user_id)s, %(target_language)s, %(input_file)s, %(status)s,
                 %(created_at)s, %(updated_at)s, %(output_url)s, %(output_s3_key)s, %(subtitle_s3_key)s,
                 %(whatsapp_url)s, %(file_size_mb)s, %(segments_count)s, %(words_localized)s, %(progress)s,
-                %(error_message)s, %(cultural_report)s, %(cultural_analysis)s, %(draft_segments)s
+                %(error_message)s, %(cultural_report)s, %(cultural_analysis)s, %(draft_segments)s,
+                %(job_type)s, %(dub_audio_s3_key)s, %(short_id)s
             )
             ON CONFLICT (job_id) DO UPDATE SET
                 user_id           = EXCLUDED.user_id,
@@ -150,7 +158,10 @@ class DBService:
                 error_message     = COALESCE(EXCLUDED.error_message, videos.error_message),
                 cultural_report   = COALESCE(EXCLUDED.cultural_report, videos.cultural_report),
                 cultural_analysis = COALESCE(EXCLUDED.cultural_analysis, videos.cultural_analysis),
-                draft_segments    = COALESCE(EXCLUDED.draft_segments, videos.draft_segments)
+                draft_segments    = COALESCE(EXCLUDED.draft_segments, videos.draft_segments),
+                job_type          = COALESCE(EXCLUDED.job_type, videos.job_type),
+                dub_audio_s3_key  = COALESCE(EXCLUDED.dub_audio_s3_key, videos.dub_audio_s3_key),
+                short_id          = COALESCE(EXCLUDED.short_id, videos.short_id)
         """
         try:
             self._execute(query, params)
@@ -277,6 +288,8 @@ class DBService:
                 """
                 SELECT * FROM videos
                 WHERE user_id = %s
+                  AND (job_type IS NULL OR job_type IN ('localization', 'audio_dub'))
+                  AND short_id IS NULL
                 ORDER BY created_at DESC
                 LIMIT %s
                 """,
@@ -287,6 +300,7 @@ class DBService:
             for row in (rows or []):
                 video = {
                     "job_id": row.get("job_id"),
+                    "job_type": row.get("job_type") or "localization",
                     "target_language": row.get("target_language"),
                     "input_file": row.get("input_file"),
                     "status": row.get("status"),
@@ -294,6 +308,8 @@ class DBService:
                     "output_url": row.get("output_url"),
                     "output_s3_key": row.get("output_s3_key"),
                     "subtitle_s3_key": row.get("subtitle_s3_key"),
+                    "dub_audio_s3_key": row.get("dub_audio_s3_key"),
+                    "short_id": row.get("short_id"),
                     "words_localized": int(row["words_localized"]) if row.get("words_localized") is not None else None,
                     "whatsapp_url": row.get("whatsapp_url"),
                     "file_size_mb": float(row["file_size_mb"]) if row.get("file_size_mb") is not None else None,

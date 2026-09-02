@@ -85,18 +85,21 @@ export function useAuthToken() {
  */
 export interface HistoryVideo {
     job_id: string;
+    job_type: 'localization' | 'audio_dub' | string;
     target_language: string;
     input_file: string;
     status: string;
     created_at: string;
     output_url?: string;
     dub_audio_url?: string;
+    dub_audio_s3_key?: string;
     input_url?: string;
     subtitle_url?: string;
     whatsapp_url?: string;
     file_size_mb?: number;
     segments_count?: number;
     words_localized?: number;
+    short_id?: string;
     draft_segments?: any[];
     cultural_report?: {
         idioms_adapted?: number;

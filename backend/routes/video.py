@@ -520,6 +520,13 @@ async def get_user_history(
             if fresh_input_url:
                 video["input_url"] = fresh_input_url
 
+        # Regenerate dub audio URL for audio_dub jobs
+        dub_key = video.get("dub_audio_s3_key")
+        if dub_key and s3_service.is_configured():
+            fresh_dub_url = s3_service.create_presigned_url(dub_key, expiration=3600)
+            if fresh_dub_url:
+                video["dub_audio_url"] = fresh_dub_url
+
     # Calculate real dashboard stats from user's history
     total_projects = len(videos)
 

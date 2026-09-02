@@ -194,7 +194,9 @@ class JobService:
         output_s3_key: str,
         results: Dict[str, Any],
         whatsapp_url: str = None,
-        file_size_mb: float = None
+        file_size_mb: float = None,
+        job_type: str = None,
+        dub_audio_s3_key: str = None,
     ) -> bool:
         """
         Mark job as complete with results
@@ -246,7 +248,9 @@ class JobService:
             segments_count=results.get("segments_count"),
             draft_segments=results.get("segments"),
             subtitle_s3_key=results.get("subtitle_s3_key"),
-            words_localized=results.get("words_localized")
+            words_localized=results.get("words_localized"),
+            job_type=job_type or "localization",
+            dub_audio_s3_key=dub_audio_s3_key,
         )
         
         return True

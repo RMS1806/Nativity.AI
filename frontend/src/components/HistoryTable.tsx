@@ -19,7 +19,8 @@ import {
     Play,
     FileText,
     Trash2,
-    PartyPopper
+    PartyPopper,
+    Music,
 } from 'lucide-react';
 import { useHistory, HistoryVideo, useAuthenticatedApi } from '@/lib/auth-api';
 import { CulturalInsight, CulturalReportModal } from './CulturalReport';
@@ -405,6 +406,7 @@ function VideoRow({
     const [fetchingInsights, setFetchingInsights] = useState(false);
     const api = useAuthenticatedApi();
 
+    const isAudioDub = video.job_type === 'audio_dub';
     const language = LANGUAGE_NAMES[video.target_language] || { name: video.target_language, native: '' };
     const fileName = video.input_file.split('/').pop() || 'Video';
 
@@ -456,15 +458,21 @@ function VideoRow({
             <motion.div
                 whileHover={{ scale: 1.05 }}
                 className="relative w-full sm:w-32 h-20 neo-border flex items-center justify-center flex-shrink-0 cursor-pointer group overflow-hidden"
-                style={{ backgroundColor: '#f4ede5' }}
+                style={{ backgroundColor: isAudioDub ? '#F3EDFF' : '#f4ede5' }}
                 onClick={() =>
-                    video.status === 'complete' && video.output_url &&
+                    !isAudioDub && video.status === 'complete' && video.output_url &&
                     onOpenVideo({ output_url: video.output_url, input_url: video.input_url, fileName })
                 }
             >
-                <Video className="w-5 h-5 text-[#5c403d] group-hover:hidden" />
-                {video.status === 'complete' && video.output_url && (
-                    <Play className="w-5 h-5 hidden group-hover:block text-[#ba061b]" />
+                {isAudioDub ? (
+                    <Music className="w-5 h-5 text-[#9c48ea]" />
+                ) : (
+                    <>
+                        <Video className="w-5 h-5 text-[#5c403d] group-hover:hidden" />
+                        {video.status === 'complete' && video.output_url && (
+                            <Play className="w-5 h-5 hidden group-hover:block text-[#ba061b]" />
+                        )}
+                    </>
                 )}
             </motion.div>
 
@@ -472,6 +480,14 @@ function VideoRow({
             <div className="flex-grow min-w-0">
                 <h3 className="font-bold text-[#1A1A1A] truncate">{fileName}</h3>
                 <div className="flex items-center gap-2 mt-1 text-sm">
+                    {isAudioDub && (
+                        <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 font-mono-label text-[11px] neo-border text-white font-bold"
+                            style={{ backgroundColor: '#9c48ea', borderRadius: '9999px' }}
+                        >
+                            <Music className="w-2.5 h-2.5" /> Audio Dub
+                        </span>
+                    )}
                     <span
                         className="inline-block px-2 py-0.5 font-mono-label text-[11px] neo-border text-white font-bold"
                         style={{ backgroundColor: '#8127cf', borderRadius: '9999px' }}
@@ -494,31 +510,39 @@ function VideoRow({
 
             {/* Actions */}
             <div className="flex items-center gap-2 flex-shrink-0">
-                {video.status === 'complete' && video.output_url && (
-                    <>
-                        <ActionButton onClick={handleDownloadClick} icon={Download} title="Download" />
-                        {video.subtitle_url ? (
-                            <ActionButton href={video.subtitle_url} icon={FileText} title="Download Subtitles (VTT)" />
-                        ) : (
+                {isAudioDub ? (
+                    /* Audio Dub row: just download .aac + delete */
+                    video.status === 'complete' && video.dub_audio_url && (
+                        <ActionButton href={video.dub_audio_url} icon={Music} title="Download Dubbed Audio (.aac)" />
+                    )
+                ) : (
+                    /* Regular localization row */
+                    video.status === 'complete' && video.output_url && (
+                        <>
+                            <ActionButton onClick={handleDownloadClick} icon={Download} title="Download" />
+                            {video.subtitle_url ? (
+                                <ActionButton href={video.subtitle_url} icon={FileText} title="Download Subtitles (VTT)" />
+                            ) : (
+                                <ActionButton
+                                    onClick={handleDownloadSrt}
+                                    icon={loadingSrt ? Loader2 : FileText}
+                                    title="Download SRT"
+                                    disabled={loadingSrt}
+                                />
+                            )}
                             <ActionButton
-                                onClick={handleDownloadSrt}
-                                icon={loadingSrt ? Loader2 : FileText}
-                                title="Download SRT"
-                                disabled={loadingSrt}
+                                onClick={handleShowInsights}
+                                icon={fetchingInsights ? Loader2 : Eye}
+                                title="Cultural Insights"
+                                disabled={fetchingInsights}
                             />
-                        )}
-                        <ActionButton
-                            onClick={handleShowInsights}
-                            icon={fetchingInsights ? Loader2 : Eye}
-                            title="Cultural Insights"
-                            disabled={fetchingInsights}
-                        />
-                        <ActionButton
-                            onClick={() => onOpenYoutube({ job_id: video.job_id })}
-                            icon={Youtube}
-                            title="YouTube Export"
-                        />
-                    </>
+                            <ActionButton
+                                onClick={() => onOpenYoutube({ job_id: video.job_id })}
+                                icon={Youtube}
+                                title="YouTube Export"
+                            />
+                        </>
+                    )
                 )}
                 <ActionButton
                     onClick={() => onOpenDelete({ job_id: video.job_id, fileName })}

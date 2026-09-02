@@ -841,6 +841,8 @@ def _run_audio_localization_inner(job_id: str, user_id: str, file_key: str, targ
             output_s3_key=output_key,
             results=results,
             file_size_mb=mix_result.file_size_mb,
+            job_type="audio_dub",
+            dub_audio_s3_key=output_key,
         )
 
         print(f"[AudioTask] Job {job_id} complete")
