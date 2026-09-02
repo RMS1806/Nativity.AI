@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useUser, UserButton } from '@clerk/nextjs';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { Plus, Zap, Home, LayoutDashboard, Globe, BookOpen, FolderOpen, Music } from 'lucide-react';
+import { Plus, Zap, Home, LayoutDashboard, Globe, BookOpen, FolderOpen, Music, Scissors } from 'lucide-react';
 import Link from 'next/link';
 import HistoryTable from '@/components/HistoryTable';
 import { useHistory, DashboardStats } from '@/lib/auth-api';
@@ -132,6 +132,13 @@ export default function DashboardPage() {
                         <Music className="w-5 h-5" />
                         Audio Dub
                     </Link>
+                    <Link
+                        href="/shorts"
+                        className="flex items-center gap-3 px-4 py-3 font-mono-label text-[#1A1A1A] hover:bg-[#eee7df] hover:translate-x-1 transition-all"
+                    >
+                        <Scissors className="w-5 h-5" />
+                        Shorts
+                    </Link>
                 </nav>
                 <div className="mt-auto space-y-2 pt-4" style={{ borderTop: '3px solid #1A1A1A' }}>
                     <Link href="/">
@@ -179,7 +186,7 @@ export default function DashboardPage() {
                     className="mb-8"
                 >
                     <h2 className="text-3xl font-bold text-[#1A1A1A] mb-1 font-headline tracking-tight">
-                        Welcome back{isLoaded && user?.firstName ? `, ${user.firstName}` : ''}! 👋
+                        Welcome back{isLoaded && user?.firstName ? `, ${user.firstName}` : ''}!
                     </h2>
                     <p className="text-[#5c403d]">Your localization command center</p>
                 </motion.div>

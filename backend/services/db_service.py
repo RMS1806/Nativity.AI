@@ -368,6 +368,128 @@ class DBService:
             print(f"Error getting active jobs: {e}")
             return []
 
+    # ── Shorts ───────────────────────────────────────────────────────────
+
+    def create_short(
+        self,
+        short_id: str,
+        source_job_id: str,
+        user_id: str,
+        title: str,
+        start_time_s: float,
+        end_time_s: float,
+        s3_key: str,
+        description: str = "",
+        status: str = "ready",
+    ) -> Dict[str, Any]:
+        if not self.is_configured():
+            return {"error": "Database not configured"}
+        now = datetime.utcnow().isoformat() + "Z"
+        try:
+            self._execute(
+                """
+                INSERT INTO shorts
+                    (short_id, source_job_id, user_id, title, start_time_s, end_time_s,
+                     s3_key, status, description, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (short_id) DO NOTHING
+                """,
+                (short_id, source_job_id, user_id, title, start_time_s, end_time_s,
+                 s3_key, status, description, now, now),
+            )
+            return {"success": True, "short_id": short_id}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_shorts_for_source(self, source_job_id: str, user_id: str) -> List[Dict[str, Any]]:
+        """Return all shorts extracted from one source job."""
+        if not self.is_configured():
+            return []
+        try:
+            rows, _ = self._execute(
+                """
+                SELECT * FROM shorts
+                WHERE source_job_id = %s AND user_id = %s
+                ORDER BY start_time_s ASC
+                """,
+                (source_job_id, user_id),
+                fetch="all",
+            )
+            return [dict(r) for r in (rows or [])]
+        except Exception as e:
+            print(f"Error getting shorts: {e}")
+            return []
+
+    def get_user_shorts_sources(self, user_id: str) -> List[Dict[str, Any]]:
+        """
+        Return distinct source jobs that have at least one short for a user.
+        Joins with videos table to get filename + language info.
+        """
+        if not self.is_configured():
+            return []
+        try:
+            rows, _ = self._execute(
+                """
+                SELECT
+                    s.source_job_id,
+                    v.input_file,
+                    v.target_language,
+                    COUNT(s.short_id) AS shorts_count,
+                    MAX(s.created_at) AS last_created_at
+                FROM shorts s
+                LEFT JOIN videos v ON v.job_id = s.source_job_id
+                WHERE s.user_id = %s
+                GROUP BY s.source_job_id, v.input_file, v.target_language
+                ORDER BY last_created_at DESC
+                """,
+                (user_id,),
+                fetch="all",
+            )
+            return [dict(r) for r in (rows or [])]
+        except Exception as e:
+            print(f"Error getting shorts sources: {e}")
+            return []
+
+    def get_short_by_id(self, short_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        if not self.is_configured():
+            return None
+        try:
+            row, _ = self._execute(
+                "SELECT * FROM shorts WHERE short_id = %s AND user_id = %s",
+                (short_id, user_id),
+                fetch="one",
+            )
+            return dict(row) if row else None
+        except Exception:
+            return None
+
+    def delete_short(self, short_id: str, user_id: str) -> Dict[str, Any]:
+        if not self.is_configured():
+            return {"error": "Database not configured"}
+        try:
+            _, rowcount = self._execute(
+                "DELETE FROM shorts WHERE short_id = %s AND user_id = %s",
+                (short_id, user_id),
+            )
+            if rowcount == 0:
+                return {"error": "Short not found or not owned by user"}
+            return {"success": True}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def update_short_status(self, short_id: str, status: str) -> Dict[str, Any]:
+        if not self.is_configured():
+            return {"error": "Database not configured"}
+        now = datetime.utcnow().isoformat() + "Z"
+        try:
+            self._execute(
+                "UPDATE shorts SET status = %s, updated_at = %s WHERE short_id = %s",
+                (status, now, short_id),
+            )
+            return {"success": True}
+        except Exception as e:
+            return {"error": str(e)}
+
 
 # Singleton instance
 db_service = DBService()

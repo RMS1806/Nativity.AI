@@ -5,7 +5,7 @@ import { useAuth, UserButton } from '@clerk/nextjs';
 import { motion } from 'framer-motion';
 import {
     Music, Home, LayoutDashboard, Upload, CheckCircle,
-    AlertCircle, Loader2, Download, ArrowLeft,
+    AlertCircle, Loader2, Download, ArrowLeft, Scissors,
 } from 'lucide-react';
 import Link from 'next/link';
 import axios from 'axios';
@@ -180,6 +180,13 @@ export default function AudioDubPage() {
                         <Music className="w-5 h-5" />
                         Audio Dub
                     </div>
+                    <Link
+                        href="/shorts"
+                        className="flex items-center gap-3 px-4 py-3 font-mono-label text-[#1A1A1A] hover:bg-[#eee7df] hover:translate-x-1 transition-all"
+                    >
+                        <Scissors className="w-5 h-5" />
+                        Shorts
+                    </Link>
                 </nav>
                 <div className="mt-auto pt-4" style={{ borderTop: '3px solid #1A1A1A' }}>
                     <UserButton afterSignOutUrl="/" />

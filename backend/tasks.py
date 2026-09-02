@@ -32,6 +32,7 @@ from services.gemini_service import gemini_service
 from services.s3_service import s3_service
 from services.tts_service import TTSService
 from services.ffmpeg_service import ffmpeg_service
+from services.db_service import db_service
 from models import JobStatus
 
 
@@ -312,7 +313,7 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
         # ── Step 1: Gemini analysis ───────────────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.ANALYZING,
-            progress=15, message="🧠 Gemini is analyzing your video...", user_id=user_id
+            progress=15, message="Gemini is analyzing your video...", user_id=user_id
         )
 
         if not public_url:
@@ -375,13 +376,13 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
 
         job_service.update_job_status(
             job_id=job_id, progress=45,
-            message=f"✅ Analysis complete! Found {len(segments)} segments", user_id=user_id
+            message=f"Analysis complete! Found {len(segments)} segments", user_id=user_id
         )
 
         # ── Step 2: TTS audio generation ─────────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.GENERATING_AUDIO,
-            progress=50, message="🎙️ Generating localized voice audio...", user_id=user_id
+            progress=50, message="Generating localized voice audio...", user_id=user_id
         )
 
         tts_temp_service = TTSService(output_dir=os.path.join(temp_dir, "audio_segments"))
@@ -400,13 +401,13 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
 
         job_service.update_job_status(
             job_id=job_id, progress=70,
-            message=f"✅ Generated {len(audio_segments)} audio segments", user_id=user_id
+            message=f"Generated {len(audio_segments)} audio segments", user_id=user_id
         )
 
         # ── Step 3: Ensure input video is on disk for FFmpeg ─────────────────
         if not os.path.exists(local_video_path):
             job_service.update_job_status(
-                job_id=job_id, message="📥 Downloading video for FFmpeg...", user_id=user_id
+                job_id=job_id, message="Downloading video for FFmpeg...", user_id=user_id
             )
             dl = s3_service.download_file(file_key, local_video_path)
             if "error" in dl:
@@ -415,7 +416,7 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
         # ── Step 4: FFmpeg stitch ─────────────────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.STITCHING,
-            progress=75, message="🎬 Stitching new audio with video...", user_id=user_id
+            progress=75, message="Stitching new audio with video...", user_id=user_id
         )
 
         audio_segment_dicts = [
@@ -439,7 +440,7 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
 
         job_service.update_job_status(
             job_id=job_id, progress=85,
-            message=f"✅ Video stitched! Size: {stitch_result.file_size_mb:.1f}MB", user_id=user_id
+            message=f"Video stitched! Size: {stitch_result.file_size_mb:.1f}MB", user_id=user_id
         )
 
         # ── Step 4.5: Extract audio-only dub track for YouTube ────────────────
@@ -478,7 +479,7 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
         whatsapp_url = None
         if stitch_result.file_size_mb > 15:
             job_service.update_job_status(
-                job_id=job_id, message="📱 Creating WhatsApp-optimized version...", user_id=user_id
+                job_id=job_id, message="Creating WhatsApp-optimized version...", user_id=user_id
             )
             whatsapp_result = ffmpeg_service.create_whatsapp_version(
                 input_path=output_video_path,
@@ -499,7 +500,7 @@ def _run_localization_inner(job_id: str, user_id: str, file_key: str, target_lan
         # ── Step 7: Upload output to R2 ───────────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, progress=90,
-            message="☁️ Uploading localized video to storage...", user_id=user_id
+            message="Uploading localized video to storage...", user_id=user_id
         )
 
         output_key = f"outputs/{job_id}/localized_{target_language}.mp4"
@@ -604,7 +605,7 @@ def _run_draft_creation(job_id: str, user_id: str, file_key: str, target_languag
 
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.ANALYZING,
-            progress=15, message="🧠 Gemini is analyzing and translating...", user_id=user_id
+            progress=15, message="Gemini is analyzing and translating...", user_id=user_id
         )
 
         if not public_url:
@@ -631,7 +632,7 @@ def _run_draft_creation(job_id: str, user_id: str, file_key: str, target_languag
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.COMPLETE,
             progress=100,
-            message=f"📝 Draft ready! {len(segments)} segments for review.",
+            message=f"Draft ready! {len(segments)} segments for review.",
             user_id=user_id
         )
 
@@ -718,7 +719,7 @@ def _run_audio_localization_inner(job_id: str, user_id: str, file_key: str, targ
         # ── Step 1: Extract audio from video URL ─────────────────────────────
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.ANALYZING,
-            progress=10, message="🎵 Extracting audio track...", user_id=user_id
+            progress=10, message="Extracting audio track...", user_id=user_id
         )
 
         ok = ffmpeg_service.extract_audio(public_url, audio_path)
@@ -731,7 +732,7 @@ def _run_audio_localization_inner(job_id: str, user_id: str, file_key: str, targ
         # ── Step 2: Gemini audio analysis ────────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, progress=25,
-            message="🧠 Gemini is analyzing the audio...", user_id=user_id
+            message="Gemini is analyzing the audio...", user_id=user_id
         )
 
         analysis_result = asyncio.run(
@@ -746,13 +747,13 @@ def _run_audio_localization_inner(job_id: str, user_id: str, file_key: str, targ
 
         job_service.update_job_status(
             job_id=job_id, progress=45,
-            message=f"✅ Analysis done! {len(segments)} segments found", user_id=user_id
+            message=f"Analysis done! {len(segments)} segments found", user_id=user_id
         )
 
         # ── Step 3: TTS audio generation ─────────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.GENERATING_AUDIO,
-            progress=50, message="🎙️ Generating dubbed voice audio...", user_id=user_id
+            progress=50, message="Generating dubbed voice audio...", user_id=user_id
         )
 
         tts_temp = TTSService(output_dir=os.path.join(temp_dir, "audio_segments"))
@@ -772,13 +773,13 @@ def _run_audio_localization_inner(job_id: str, user_id: str, file_key: str, targ
 
         job_service.update_job_status(
             job_id=job_id, progress=70,
-            message=f"✅ Generated {len(audio_segments)} audio segments", user_id=user_id
+            message=f"Generated {len(audio_segments)} audio segments", user_id=user_id
         )
 
         # ── Step 4: Audio-only mix ────────────────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, status=JobStatus.STITCHING,
-            progress=75, message="🎛️ Mixing dubbed audio track...", user_id=user_id
+            progress=75, message="Mixing dubbed audio track...", user_id=user_id
         )
 
         audio_segment_dicts = [
@@ -797,7 +798,7 @@ def _run_audio_localization_inner(job_id: str, user_id: str, file_key: str, targ
 
         job_service.update_job_status(
             job_id=job_id, progress=88,
-            message=f"✅ Mix complete! Size: {mix_result.file_size_mb:.1f}MB", user_id=user_id
+            message=f"Mix complete! Size: {mix_result.file_size_mb:.1f}MB", user_id=user_id
         )
 
         # Free TTS segments early
@@ -809,7 +810,7 @@ def _run_audio_localization_inner(job_id: str, user_id: str, file_key: str, targ
         # ── Step 5: Upload dubbed audio to R2 ────────────────────────────────
         job_service.update_job_status(
             job_id=job_id, progress=93,
-            message="☁️ Uploading dubbed audio...", user_id=user_id
+            message="Uploading dubbed audio...", user_id=user_id
         )
 
         output_key = f"outputs/{job_id}/dubbed_audio_{target_language}.aac"
@@ -859,6 +860,121 @@ def _run_audio_localization_inner(job_id: str, user_id: str, file_key: str, targ
                 shutil.rmtree(temp_dir)
             except Exception as e:
                 print(f"[Cleanup] Warning: {e}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Shorts generation task
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _run_shorts_generation(source_job_id: str, user_id: str, target_count: int = 5):
+    """
+    Generate short clips from a completed localization job.
+
+      1. Look up the source job in DB to get the R2 video key.
+      2. Ask Gemini for clip suggestions (45-90s each).
+      3. For each clip: ffmpeg stream-copy extract → upload to R2 → insert into shorts table.
+    """
+    print(f"[Shorts] Starting generation: source_job_id={source_job_id}")
+    _cleanup_stale_temp_dirs()
+
+    with _pipeline_semaphore:
+        print(f"[Shorts] Pipeline slot acquired")
+        _run_shorts_generation_inner(source_job_id, user_id, target_count)
+
+
+def _run_shorts_generation_inner(source_job_id: str, user_id: str, target_count: int):
+    import uuid
+    from datetime import datetime
+
+    temp_dir = None
+    try:
+        # ── Step 1: Resolve source video URL ─────────────────────────────────
+        source_row = db_service.get_job_by_id(source_job_id)
+        if not source_row:
+            raise Exception(f"Source job {source_job_id} not found")
+
+        output_s3_key = source_row.get("output_s3_key") or source_row.get("output_url")
+        if not output_s3_key:
+            raise Exception("Source job has no output video")
+
+        public_url = _r2_public_url(output_s3_key)
+        if not public_url:
+            raise Exception("R2_PUBLIC_URL not configured")
+
+        print(f"[Shorts] Source video: {public_url}")
+
+        # ── Step 2: Gemini clip suggestions ──────────────────────────────────
+        print(f"[Shorts] Requesting {target_count} clip suggestions from Gemini...")
+        clips = asyncio.run(
+            gemini_service.generate_shorts_suggestions(public_url, target_count)
+        )
+        print(f"[Shorts] Got {len(clips)} suggestions")
+
+        if not clips:
+            print("[Shorts] No clips returned — nothing to extract")
+            return
+
+        temp_dir = tempfile.mkdtemp(prefix=f"nativity_shorts_{source_job_id[:8]}_")
+
+        # ── Step 3: Extract and upload each clip ─────────────────────────────
+        now = datetime.utcnow().isoformat() + "Z"
+        created = []
+
+        for i, clip in enumerate(clips):
+            short_id = str(uuid.uuid4())
+            title = clip.get("title", f"Clip {i + 1}")
+            start_s = float(clip.get("start_time_s", 0))
+            end_s = float(clip.get("end_time_s", 0))
+            description = clip.get("description", "")
+
+            if end_s <= start_s:
+                print(f"[Shorts] Clip {i+1} has invalid timestamps — skipping")
+                continue
+
+            clip_path = os.path.join(temp_dir, f"short_{i:03d}.mp4")
+            print(f"[Shorts] Extracting clip {i+1}: {title!r} [{start_s:.1f}s–{end_s:.1f}s]")
+
+            ok = ffmpeg_service.extract_clip(public_url, start_s, end_s, clip_path)
+            if not ok:
+                print(f"[Shorts] Clip {i+1} extract failed — skipping")
+                continue
+
+            s3_key = f"shorts/{source_job_id}/{short_id}.mp4"
+            upload = s3_service.upload_file(clip_path, s3_key)
+            try:
+                os.remove(clip_path)
+            except Exception:
+                pass
+
+            if upload.get("error"):
+                print(f"[Shorts] Upload failed for clip {i+1}: {upload['error']}")
+                continue
+
+            db_service.create_short(
+                short_id=short_id,
+                source_job_id=source_job_id,
+                user_id=user_id,
+                title=title,
+                start_time_s=start_s,
+                end_time_s=end_s,
+                s3_key=s3_key,
+                description=description,
+            )
+            created.append(short_id)
+            print(f"[Shorts] Clip {i+1} saved: short_id={short_id}")
+
+        print(f"[Shorts] Done. Created {len(created)}/{len(clips)} clips.")
+
+    except Exception as exc:
+        print(f"[Shorts] Generation failed: {exc}")
+        raise
+
+    finally:
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
 
 
 # ──────────────────────────────────────────────────────────────────────────────

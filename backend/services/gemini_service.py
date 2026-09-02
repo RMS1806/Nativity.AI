@@ -550,6 +550,59 @@ You MUST respond ONLY with a raw, valid JSON object using exactly these keys. Do
         # Should not reach here, but guard anyway
         return {"error": "Failed to get response from Gemini API"}
 
+    async def generate_shorts_suggestions(
+        self, video_url: str, target_count: int = 5
+    ) -> list:
+        """
+        Analyze a video and return clip suggestions for short-form content.
+        Each clip is 45-90 seconds, chosen for standalone engagement value.
+        Returns list of {title, start_time_s, end_time_s, description} dicts.
+        """
+        if not self.is_configured():
+            return []
+
+        prompt = f"""Analyze this video and identify the {target_count} best moments to extract as short-form clips (YouTube Shorts or Instagram Reels style).
+
+Rules:
+- Each clip must be between 45 and 90 seconds long
+- Clips must not overlap
+- Prioritize: key insights, surprising moments, clear standalone value, strong openings
+- Avoid: intros, outros, quiet transitions, mid-sentence cuts
+
+Return a JSON object with exactly this structure:
+{{
+  "clips": [
+    {{
+      "title": "Concise clip title (max 60 characters)",
+      "start_time_s": 12.5,
+      "end_time_s": 78.3,
+      "description": "One sentence on why this moment works as a standalone short"
+    }}
+  ]
+}}
+
+Return exactly {target_count} clips ordered by engagement potential (best first)."""
+
+        response = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                print(f"[Shorts] Gemini clip analysis attempt {attempt}/{MAX_RETRIES}...")
+                response = self.client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=[{"video_url": video_url}, prompt],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    ),
+                )
+                data = json.loads(response.text)
+                clips = data.get("clips", [])
+                print(f"[Shorts] Got {len(clips)} clip suggestions")
+                return clips
+            except Exception as e:
+                print(f"[Shorts] Attempt {attempt} failed: {e}")
+                if attempt < MAX_RETRIES:
+                    time.sleep(15 * attempt)
+        return []
 
 
 # Singleton instance

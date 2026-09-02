@@ -281,7 +281,7 @@ class FFmpegService:
 
             video_duration = video_info['duration']
             has_original_audio = video_info.get('audio', {}).get('codec') is not None
-            print(f"🎵 Original video has audio: {has_original_audio}")
+            print(f"Original video has audio: {has_original_audio}")
 
             valid_segments = [
                 s for s in audio_segments
@@ -291,7 +291,7 @@ class FFmpegService:
                 raise Exception("No audio segments provided")
 
             mode = "chunked" if len(valid_segments) > _BATCH_THRESHOLD else "single-pass"
-            print(f"🎬 Stitch: {len(valid_segments)} segments → {mode} mode")
+            print(f"Stitch: {len(valid_segments)} segments → {mode} mode")
 
             if mode == "chunked":
                 return self._stitch_chunked(
@@ -380,7 +380,7 @@ class FFmpegService:
             )
             seg_labels.append(f"[{label}]")
 
-        print(f"🎙️ Time-aligning {len(valid_segments)} segments (max {MAX_TEMPO}x)")
+        print(f"Time-aligning {len(valid_segments)} segments (max {MAX_TEMPO}x)")
 
         mix_inputs = list(seg_labels)
         if has_original_audio:
@@ -413,7 +413,7 @@ class FFmpegService:
             cmd += ["-c:v", "copy"]
         cmd += ["-c:a", "aac", "-b:a", "128k", output_path]
 
-        print(f"🎬 Running FFmpeg (single-pass, preset={preset if optimize_for_mobile else 'copy'}, dur={video_duration:.0f}s)...")
+        print(f"Running FFmpeg (single-pass, preset={preset if optimize_for_mobile else 'copy'}, dur={video_duration:.0f}s)...")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         if result.returncode != 0:
             raise Exception(f"FFmpeg stitching failed: {result.stderr[-2000:]}")
@@ -517,7 +517,7 @@ class FFmpegService:
             n_windows = math.ceil(video_duration / _CHUNK_WINDOW_S)
             chunk_paths = []
 
-            print(f"🎬 Chunked mode: {n_windows} windows of {_CHUNK_WINDOW_S:.0f}s each")
+            print(f"Chunked mode: {n_windows} windows of {_CHUNK_WINDOW_S:.0f}s each")
 
             for i in range(n_windows):
                 t_start = i * _CHUNK_WINDOW_S
@@ -571,7 +571,7 @@ class FFmpegService:
 
             cmd += ["-c:a", "aac", "-b:a", "128k", output_path]
 
-            print(f"🎬 Running final mux (preset={preset if optimize_for_mobile else 'copy'}, dur={video_duration:.0f}s)...")
+            print(f"Running final mux (preset={preset if optimize_for_mobile else 'copy'}, dur={video_duration:.0f}s)...")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
             if result.returncode != 0:
                 raise Exception(f"FFmpeg final mux failed: {result.stderr[-2000:]}")
@@ -601,7 +601,33 @@ class FFmpegService:
         if result.returncode != 0:
             print(f"extract_audio failed: {result.stderr[-500:]}")
             return False
-        print(f"✅ Audio extracted: {os.path.getsize(output_path) / 1e6:.1f}MB → {output_path}")
+        print(f"Audio extracted: {os.path.getsize(output_path) / 1e6:.1f}MB → {output_path}")
+        return True
+
+    def extract_clip(self, source: str, start_s: float, end_s: float, output_path: str) -> bool:
+        """
+        Extract a time segment from a video or URL using stream copy (no re-encode).
+        Fast and lossless. Returns True on success.
+        """
+        duration = end_s - start_s
+        if duration <= 0:
+            print(f"extract_clip: invalid range {start_s}–{end_s}")
+            return False
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", f"{start_s:.3f}",
+            "-t",  f"{duration:.3f}",
+            "-i",  source,
+            "-c",  "copy",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            print(f"extract_clip failed: {result.stderr[-400:]}")
+            return False
+        size_mb = os.path.getsize(output_path) / 1e6
+        print(f"Clip extracted: {start_s:.1f}s–{end_s:.1f}s ({size_mb:.1f}MB) → {output_path}")
         return True
 
     def _mix_tts_positioned_batch(
@@ -695,7 +721,7 @@ class FFmpegService:
 
         size_mb = os.path.getsize(output_path) / (1024 * 1024)
         duration = self._get_audio_duration_seconds(output_path)
-        print(f"✅ Audio dub ready: {size_mb:.1f}MB, {duration:.1f}s")
+        print(f"Audio dub ready: {size_mb:.1f}MB, {duration:.1f}s")
         return ProcessingResult(success=True, output_path=output_path,
                                 file_size_mb=size_mb, duration_seconds=duration)
 
@@ -730,7 +756,7 @@ class FFmpegService:
                                     file_size_mb=0, duration_seconds=0,
                                     error="No audio segments provided")
 
-        print(f"🎙️ Mixing audio dub ({len(valid_segments)} segments)...")
+        print(f"Mixing audio dub ({len(valid_segments)} segments)...")
 
         if len(valid_segments) <= _MIX_BATCH_SIZE:
             # ── Single-pass (short video / few segments) ──────────────────────
@@ -782,7 +808,7 @@ class FFmpegService:
 
             size_mb = os.path.getsize(output_path) / (1024 * 1024)
             duration = self._get_audio_duration_seconds(output_path)
-            print(f"✅ Audio dub ready: {size_mb:.1f}MB, {duration:.1f}s")
+            print(f"Audio dub ready: {size_mb:.1f}MB, {duration:.1f}s")
             return ProcessingResult(success=True, output_path=output_path,
                                     file_size_mb=size_mb, duration_seconds=duration)
 

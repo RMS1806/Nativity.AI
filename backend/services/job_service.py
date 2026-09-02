@@ -218,7 +218,7 @@ class JobService:
             job_id=job_id,
             status=JobStatus.COMPLETE,
             progress=100,
-            message="🎉 Localization complete! Your video is ready.",
+            message="Processing complete! Your output is ready.",
             user_id=user_id
         )
         
@@ -275,7 +275,7 @@ class JobService:
         return self.update_job_status(
             job_id=job_id,
             status=JobStatus.FAILED,
-            message=f"❌ Processing failed: {error_message}",
+            message=f"Processing failed: {error_message}",
             user_id=user_id,
             error=error_message
         )

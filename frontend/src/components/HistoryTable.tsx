@@ -21,6 +21,7 @@ import {
     Trash2,
     PartyPopper,
     Music,
+    Scissors,
 } from 'lucide-react';
 import { useHistory, HistoryVideo, useAuthenticatedApi } from '@/lib/auth-api';
 import { CulturalInsight, CulturalReportModal } from './CulturalReport';
@@ -404,6 +405,7 @@ function VideoRow({
     const [segments, setSegments] = useState<Segment[]>([]);
     const [loadingSrt, setLoadingSrt] = useState(false);
     const [fetchingInsights, setFetchingInsights] = useState(false);
+    const [generatingShorts, setGeneratingShorts] = useState(false);
     const api = useAuthenticatedApi();
 
     const isAudioDub = video.job_type === 'audio_dub';
@@ -440,6 +442,16 @@ function VideoRow({
     const handleDownloadClick = () => {
         onFirstDownload(video.job_id);
         if (video.output_url) window.open(video.output_url, '_blank');
+    };
+
+    const handleGenerateShorts = async () => {
+        setGeneratingShorts(true);
+        try {
+            await api.post('/api/shorts/generate', { source_job_id: video.job_id, target_count: 5 });
+            window.location.href = '/shorts';
+        } catch {
+            setGeneratingShorts(false);
+        }
     };
 
     return (
@@ -540,6 +552,12 @@ function VideoRow({
                                 onClick={() => onOpenYoutube({ job_id: video.job_id })}
                                 icon={Youtube}
                                 title="YouTube Export"
+                            />
+                            <ActionButton
+                                onClick={handleGenerateShorts}
+                                icon={generatingShorts ? Loader2 : Scissors}
+                                title="Generate Shorts"
+                                disabled={generatingShorts}
                             />
                         </>
                     )
@@ -659,7 +677,7 @@ export default function HistoryTable() {
                 style={{ borderBottom: '3px solid #1A1A1A' }}
             >
                 <h2 className="font-mono-label text-[#1A1A1A] uppercase tracking-widest flex items-center gap-2 font-bold">
-                    🎉 Recent Projects
+                    Recent Projects
                     {videos.length > 0 && (
                         <span
                             className="ml-2 px-2 py-0.5 text-xs neo-border font-bold"

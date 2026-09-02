@@ -107,6 +107,28 @@ export interface HistoryVideo {
     };
 }
 
+export interface ShortClip {
+    short_id: string;
+    source_job_id: string;
+    user_id: string;
+    title: string;
+    start_time_s: number;
+    end_time_s: number;
+    s3_key?: string;
+    clip_url?: string;
+    status: string;
+    description?: string;
+    created_at: string;
+}
+
+export interface ShortsSource {
+    source_job_id: string;
+    input_file: string;
+    target_language: string;
+    shorts_count: number;
+    last_created_at: string;
+}
+
 export interface DashboardStats {
     total_projects: number;
     languages_used: number;

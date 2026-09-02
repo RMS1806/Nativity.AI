@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 
 from config import settings
 from routes.video import router as video_router
+from routes.shorts import router as shorts_router
 from services.gemini_service import gemini_service
 from services.s3_service import s3_service
 from services.ffmpeg_service import ffmpeg_service, check_ffmpeg_installation
@@ -84,6 +85,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(video_router)
+app.include_router(shorts_router)
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
