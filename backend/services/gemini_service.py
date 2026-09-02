@@ -583,13 +583,19 @@ Return a JSON object with exactly this structure:
 
 Return exactly {target_count} clips ordered by engagement potential (best first)."""
 
+        try:
+            video_part = types.Part.from_uri(file_uri=video_url, mime_type="video/mp4")
+        except Exception as e:
+            print(f"[Shorts] Failed to build video part: {e}")
+            return []
+
         response = None
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 print(f"[Shorts] Gemini clip analysis attempt {attempt}/{MAX_RETRIES}...")
                 response = self.client.models.generate_content(
                     model=MODEL_NAME,
-                    contents=[{"video_url": video_url}, prompt],
+                    contents=[video_part, prompt],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json"
                     ),
