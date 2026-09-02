@@ -43,12 +43,13 @@ def _presign(s3_key: Optional[str]) -> Optional[str]:
 async def generate_shorts(
     req: GenerateShortsRequest,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
     """
     Kick off shorts generation for a completed source job.
     Returns immediately; extraction runs in background.
     """
+    user_id: str = user["sub"]
     source = db_service.get_job_by_id(req.source_job_id)
     if not source or source.get("user_id") != user_id:
         raise HTTPException(status_code=404, detail="Source job not found")
@@ -69,8 +70,9 @@ async def generate_shorts(
 
 
 @router.get("/sources")
-async def list_sources(user_id: str = Depends(get_current_user)):
+async def list_sources(user: dict = Depends(get_current_user)):
     """Return all source videos that have at least one short."""
+    user_id: str = user["sub"]
     sources = db_service.get_user_shorts_sources(user_id)
     return {"success": True, "sources": sources, "count": len(sources)}
 
@@ -78,9 +80,10 @@ async def list_sources(user_id: str = Depends(get_current_user)):
 @router.get("/source/{source_job_id}")
 async def list_shorts_for_source(
     source_job_id: str,
-    user_id: str = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
     """Return all clips extracted from one source job."""
+    user_id: str = user["sub"]
     shorts = db_service.get_shorts_for_source(source_job_id, user_id)
     enriched = []
     for s in shorts:
@@ -92,8 +95,9 @@ async def list_shorts_for_source(
 @router.delete("/{short_id}")
 async def delete_short(
     short_id: str,
-    user_id: str = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
+    user_id: str = user["sub"]
     short = db_service.get_short_by_id(short_id, user_id)
     if not short:
         raise HTTPException(status_code=404, detail="Short not found")

@@ -447,8 +447,12 @@ function VideoRow({
     const handleGenerateShorts = async () => {
         setGeneratingShorts(true);
         try {
-            await api.post('/api/shorts/generate', { source_job_id: video.job_id, target_count: 5 });
-            window.location.href = '/shorts';
+            const res = await api.post('/api/shorts/generate', { source_job_id: video.job_id, target_count: 5 });
+            if (res.status >= 200 && res.status < 300) {
+                window.location.href = '/shorts';
+            } else {
+                setGeneratingShorts(false);
+            }
         } catch {
             setGeneratingShorts(false);
         }
