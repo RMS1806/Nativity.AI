@@ -405,9 +405,11 @@ class FFmpegService:
             "-map", "0:v", "-map", "[aout]",
         ]
         if optimize_for_mobile:
-            # ultrafast for short clips — quality gap vs fast is negligible; speed is 3-5×
-            preset = "ultrafast" if video_duration <= 120 else "fast"
+            # ultrafast on all durations — keeps peak RAM well below Render's 512MB limit.
+            # Quality gap vs fast is negligible at 480p/crf28; RAM savings are ~100-150MB.
+            preset = "ultrafast"
             cmd += ["-c:v", "libx264", "-preset", preset, "-crf", "28",
+                    "-threads", "1",
                     "-vf", "scale=-2:480", "-movflags", "+faststart"]
         else:
             cmd += ["-c:v", "copy"]
@@ -563,8 +565,9 @@ class FFmpegService:
                 cmd += ["-map", "0:v", "-map", "1:a"]
 
             if optimize_for_mobile:
-                preset = "ultrafast" if video_duration <= 120 else "fast"
+                preset = "ultrafast"
                 cmd += ["-c:v", "libx264", "-preset", preset, "-crf", "28",
+                        "-threads", "1",
                         "-vf", "scale=-2:480", "-movflags", "+faststart"]
             else:
                 cmd += ["-c:v", "copy"]
